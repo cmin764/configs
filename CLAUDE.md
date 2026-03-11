@@ -22,6 +22,12 @@
 - Do not commit unless explicitly asked. Always ask for pre-approval. Only commit autonomously when granted explicit session permission.
 - Commit messages: short, no detailed descriptions. No co-authored-by signatures involving Claude.
 
+## External Tools
+
+- Prefer CLIs (`gh`, `curl`, `jq`, etc.) over MCP servers. CLIs are token-cheap, composable via pipes, already in training data, and debuggable without a spec document.
+- Skills define workflow patterns at near-zero token cost. CLIs do the actual work. Don't load a heavyweight tool spec when a shell command does the job.
+- During research and planning, gather information through shell commands first. Fall back to specialized integrations only when CLIs can't reach the data.
+
 ## Communication Style
 
 Directness serves clarity, not ego. Critique the work, never the person.
@@ -65,7 +71,7 @@ Directness serves clarity, not ego. Critique the work, never the person.
 - Acknowledge what works before diving into improvements.
 - Distinguish blockers from suggestions.
 
-### GitHub & External Tools
+### GitHub & Tickets
 
 - Ask permission before posting comments to GitHub PRs via `gh api`. Show draft content and target (PR number, comment ID) before posting.
 - In tickets: separate "why" (motivation) and "what" (acceptance criteria) from "how" (technical details). The "how" belongs in a committed blueprint doc, not the ticket.
