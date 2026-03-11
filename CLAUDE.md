@@ -1,94 +1,69 @@
-## Python Best Practices
+## Code Style (Python)
 
-- Use global imports in Python. Only when avoiding circular ones, then importing in-place.
-- Ensure imports at the beginning of the Python module, and use local on-demand importing only when really necessary, like avoiding a circular import or a lazy load due to runtime loading time issues.
-- Use new type annotations with Python. (e.g.: `... | None` instead of `Optional[...]`)
-- Please write all comments with a capital letter and end in punctuation. One-liner inline comments can start with a small letter and not end in punctuation.
-- Write comments that explain WHY the code exists and WHAT EFFECT it produces, not what the code does. The code itself should be self-explanatory. Focus on rationale, context, and expected outcomes.
-- Avoid referencing specific variable/class/method names in comments. Keep them conceptual and human-friendly rather than code-specific.
-- Use `list`, `dict`, `tuple` instead of `List`, `Dict`, `Tuple`.
-- For pydantic fields not having a default, use `<var>: Annotated[<type>, ...]` instead of `<var>: <type> = ...`.
-- Stay consistent with the project if you identify that old-style typing is already in use.
-- Ensure code gets formatted with Ruff (or Black as an alternative), imports sorted with Isort and some basic linting and type-checking is performed after generating Python code.
-- When refactoring classes, ensure only public methods with outside usage don't start with an underscore, while the other members privately used inside the class should start with an underscore given their naming. Use name mangling (two underscores `__`) for the members that we'd like to not override during inheritance even when naming matches.
-- Since we type-annotate arguments and returns, don't repeat the type under the docstring, while following Google-style docstrings.
-- Make a habit of documenting usage examples under the docstrings, especially with reusable utilities.
+- Global imports at module top. Local imports only to avoid circular dependencies or defer heavy runtime loads.
+- Modern type annotations: `str | None` over `Optional[str]`, `list`/`dict`/`tuple` over `List`/`Dict`/`Tuple`.
+- For Pydantic fields without a default, use `<var>: Annotated[<type>, ...]` instead of `<var>: <type> = ...`.
+- If a project already uses old-style typing, stay consistent with it.
+- Prefix private class members with `_`. Use name mangling (`__`) for members that must not be overridden in subclasses. Only truly public methods (called externally) remain unprefixed.
+- Format with Ruff (or Black). Sort imports with Isort. Run linting and type-checking after generating code.
 
-## Code Design Principles
+## Code Design
 
-- Keep it as simple as possible, without unnecessary refactoring, while improving the code-base through follow-up suggestions in an iterative way.
-- Follow SOLID principles, including DRY, YAGNI and KISS.
-- Recommend design patterns when you see an opportunity, but don't add excessive unnecessary OOP.
+- Simplest solution first. Improve iteratively through follow-up suggestions, not big-bang refactors.
+- SOLID, DRY, YAGNI. Recommend design patterns when they earn their keep — skip gratuitous OOP.
 
-## Markdown Rendering
+## Comments & Documentation
 
-- When rendering Markdown, pay attention to the bulletpoint list items, in order to generate correctly rendered lists:
-    
-    - No space before the dash/star (bullet), and one space after
-    - Each indentation level should be of exactly 4 spaces
-    - There should be one empty line before and after each list block
+- Comments explain WHY the code exists and WHAT EFFECT it produces, not what it does. Keep them conceptual — no variable or method names in prose.
+- Capitalize comments and end with punctuation. One-liner inline comments can be lowercase without punctuation.
+- Google-style docstrings. Don't repeat types already present in annotations.
+- Include usage examples in docstrings for reusable utilities.
 
-- Place spaces after titles.
+## Formatting
 
-## Security Practices
+- Markdown lists: no space before the bullet, one space after. Indent 4 spaces per level. Empty line before and after each list block.
+- Space after headings.
 
-- Do not read unencrypted secrets, do not send them by any means outside of this computer.
-- When doing yourself git commits, please be short on the message and don't describe in detail the changes.
-- Please don't make commits yourself, let me do that manually. Always ask for pre-approval before committing. Only when I allow you explicitly in a session to do that you are allowed to do it as an agent.
-- When creating commit messages, do not bring in the co-authored by kind of signare involving Claude.
+## Git & Version Control
 
-## GitHub Interactions
+- Do not commit unless explicitly asked. Always ask for pre-approval. Only commit autonomously when granted explicit session permission.
+- Commit messages: short, no detailed descriptions. No co-authored-by signatures involving Claude.
 
-- Always ask for permission before posting comments to GitHub PRs via `gh api` commands.
-- Show the draft comment content and target (PR number, comment ID) before posting.
+## Communication Style
 
-## Decision Making
+Directness serves clarity, not ego. Critique the work, never the person.
 
-- Don't speculate. Back all actions and decisions with data and facts, not opinions.
+### Tone
 
-## Jira Tickets
+- Write with conviction. First person, conversational — every sentence carries weight.
+- Cut corporate jargon. If it sounds like a press release, rewrite it.
+- Be direct about problems while offering paths forward.
+- No hedging ("I think maybe...", "perhaps we could consider..."). No passive voice when active is clearer. No generic advice.
 
-- Separate "why" (motivation) and "what" (acceptance criteria) from "how" (technical details). The "how" belongs in a local Markdown blueprint document to commit, not in the ticket. These two sides should complement each other, not overlap.
-- Use correct Jira formatting: headings with `h2.` or `h3.` syntax, bullet points with `*` or `-`, numbered lists with `#`.
+### Structure
 
-## Writing Style for Communications
+- Short punchy sentences for simple points. Longer reasoning for complex ideas.
+- Ground abstractions in concrete examples and analogies.
+- End with action or a thought-provoking question, never a bland summary.
 
-When writing Slack messages, Confluence docs, Jira tickets, GitHub PRs, or code reviews:
+### Thinking
 
-### Core Principle
+- Ask "why" before "how" or "what." Challenge assumptions with curiosity, not judgment.
+- Back decisions with data and facts, not opinions. Don't speculate.
+- Pressure-test conventional wisdom — not to be contrarian, but to find the stronger answer.
 
-Inspire, don't attack. Be candid without burning bridges â€” directness serves clarity, not ego. Guide rather than mandate, help rather than complicate, accelerate rather than block.
+### Code Reviews
 
-### Tone & Voice
+- Frame feedback as opportunities: "This could be cleaner if..." beats "This is wrong."
+- Explain reasoning behind suggestions — teach, don't correct.
+- Acknowledge what works before diving into improvements.
+- Distinguish blockers from suggestions.
 
-- Write with conviction. First person, conversational â€” but every sentence carries weight.
-- Cut corporate jargon. If a word sounds like it belongs in a press release, replace it with something human.
-- Be direct about problems while offering paths forward. Critique the work, never the person.
-- When something doesn't work, say so clearly â€” then explain why and what would work better.
+### GitHub & External Tools
 
-### Structure & Flow
+- Ask permission before posting comments to GitHub PRs via `gh api`. Show draft content and target (PR number, comment ID) before posting.
+- In tickets: separate "why" (motivation) and "what" (acceptance criteria) from "how" (technical details). The "how" belongs in a committed blueprint doc, not the ticket.
 
-- Mix short, punchy sentences with longer reasoning for complex ideas.
-- Use rhetorical questions to spark thinking, not to corner people.
-- Ground abstract concepts in concrete analogies and real-world examples.
-- End with action or a thought-provoking question â€” never a bland summary.
+## Security
 
-### Thinking Approach
-
-- Ask "why" before "how" or "what". Challenge assumptions openly, but with curiosity rather than judgment.
-- If conventional wisdom points one way, explore alternatives â€” not to be contrarian, but to pressure-test ideas.
-- Personal experience is valid evidence when it illustrates a point. Be vulnerable with purpose.
-
-### For Code Reviews Specifically
-
-- Frame feedback as opportunities, not failures. "This could be cleaner if..." beats "This is wrong."
-- Explain the reasoning behind suggestions â€” teach, don't just correct.
-- Acknowledge what works well before diving into improvements.
-- Distinguish between blockers and suggestions. Not everything needs to be perfect.
-
-### Avoid
-
-- Hedging phrases that dilute your point ("I think maybe...", "perhaps we could consider...")
-- Passive voice when active voice is clearer
-- Generic advice that could apply to anything
-- Language that assigns blame or sounds condescending
+- Never read or transmit unencrypted secrets outside this machine.
