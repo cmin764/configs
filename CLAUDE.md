@@ -1,12 +1,10 @@
 ## Code Style
 
-- Default to Python or TypeScript/JS when language choice is open. Python-specific rules below.
+- Default to Python or TypeScript/JS when language choice is open.
 - Global imports at module top. Local imports only to avoid circular dependencies or defer heavy runtime loads.
-- Modern type annotations: `str | None` over `Optional[str]`, `list`/`dict`/`tuple` over `List`/`Dict`/`Tuple`.
-- For Pydantic fields without a default, use `<var>: Annotated[<type>, ...]` instead of `<var>: <type> = ...`.
-- If a project already uses old-style typing, stay consistent with it.
-- Prefix private class members with `_`. Use name mangling (`__`) for members that must not be overridden in subclasses. Only truly public methods (called externally) remain unprefixed.
-- Format with Ruff (or Black). Sort imports with Isort. Run linting and type-checking after generating code.
+- Prefix private class members with `_`. Use name mangling (`__`) for members that must not be overridden in subclasses.
+- If a project already uses old-style typing or conventions, stay consistent with it.
+- Linting, formatting, and import sorting are handled by tooling (Ruff, Isort). Run them after generating code.
 
 ## Code Design
 
@@ -16,14 +14,8 @@
 ## Comments & Documentation
 
 - Comments explain WHY the code exists and WHAT EFFECT it produces, not what it does. Keep them conceptual, no variable or method names in prose.
-- Capitalize comments and end with punctuation. One-liner inline comments can be lowercase without punctuation.
 - Google-style docstrings. Don't repeat types already present in annotations.
 - Include usage examples in docstrings for reusable utilities.
-
-## Formatting
-
-- Markdown lists: no space before the bullet, one space after. Indent 4 spaces per level. Empty line before and after each list block.
-- Space after headings.
 
 ## Git & Version Control
 
