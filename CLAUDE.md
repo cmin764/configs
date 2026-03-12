@@ -24,9 +24,10 @@
 
 ## External Tools
 
-- Prefer CLIs (`gh`, `curl`, `jq`, etc.) over MCP servers. CLIs are token-cheap, composable via pipes, already in training data, and debuggable without a spec document.
+- Default to CLIs (`gh`, `curl`, `jq`, etc.) over MCP servers. CLIs are token-cheap, composable via pipes, already in training data, and debuggable without a spec document. MCP tool definitions and verbose responses eat context window budget, which degrades agent performance on long tasks.
+- Use MCP servers when: no CLI equivalent exists, the interaction is inherently stateful, or the MCP provides structured output that would require brittle parsing from a CLI. Don't use an MCP that just wraps a CLI the agent already knows (e.g., GitHub MCP when `gh` is available).
 - Skills define workflow patterns at near-zero token cost. CLIs do the actual work. Don't load a heavyweight tool spec when a shell command does the job.
-- During research and planning, gather information through shell commands first. Fall back to specialized integrations only when CLIs can't reach the data.
+- During research and planning, gather information through shell commands first. Fall back to MCP or other integrations only when CLIs can't reach the data.
 
 ## Communication Style
 
