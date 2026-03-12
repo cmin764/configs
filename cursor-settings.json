@@ -1,0 +1,17 @@
+{
+    "window.commandCenter": true,
+    // Theme follows system's
+    "workbench.colorTheme": "Cursor Light",
+    "window.autoDetectColorScheme": true,
+    "workbench.preferredLightColorTheme": "Cursor Light",
+    "workbench.preferredDarkColorTheme": "Cursor Dark",
+    // Ensure every file ends with a newline
+    "files.insertFinalNewline": true,
+    // Trim trailing whitespace by default
+    "files.trimTrailingWhitespace": true,
+    "[markdown]": {
+        // Not for Markdown because two trailing spaces means EOL
+        "files.trimTrailingWhitespace": false
+    }
+}
+
