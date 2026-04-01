@@ -1,3 +1,6 @@
+# Local binaries (takes priority over brew and everything else)
+export PATH="$HOME/.local/bin:$PATH"
+
 # Homebrew
 if [[ -x /opt/homebrew/bin/brew ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -13,9 +16,6 @@ export PATH="$PATH:/Users/cmin/go/bin"
 # pyenv
 export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
-
-# pipx
-export PATH="$PATH:/Users/cmin/.local/bin"
 
 # Bun
 export BUN_INSTALL="$HOME/.bun"
