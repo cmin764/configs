@@ -7,11 +7,15 @@ if [[ -x /opt/homebrew/bin/brew ]]; then
 fi
 
 # Java
-export JAVA_HOME="/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home"
-export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
+_java_prefix="$(brew --prefix openjdk 2>/dev/null)"
+if [[ -n "$_java_prefix" ]]; then
+    export JAVA_HOME="$_java_prefix/libexec/openjdk.jdk/Contents/Home"
+    export PATH="$_java_prefix/bin:$PATH"
+fi
+unset _java_prefix
 
 # Go
-export PATH="$PATH:/Users/cmin/go/bin"
+export PATH="$PATH:$HOME/go/bin"
 
 # pyenv
 export PYENV_ROOT="$HOME/.pyenv"
@@ -25,7 +29,7 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 export NVM_DIR="$HOME/.nvm"
 
 # JetBrains Toolbox
-export PATH="$PATH:/Users/cmin/Library/Application Support/JetBrains/Toolbox/scripts"
+path+=("$HOME/Library/Application Support/JetBrains/Toolbox/scripts")
 
 # AI tools
 export ENABLE_EXPERIMENTAL_MCP_CLI=true

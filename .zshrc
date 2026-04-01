@@ -1,10 +1,15 @@
 # Aliases
 alias brew-all="brew update && brew upgrade && brew cleanup && brew doctor"
 
-# Completions
-autoload -U compinit && compinit
+# Completions — full rebuild once a day, cached otherwise
+autoload -Uz compinit
+if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
+    compinit
+else
+    compinit -C
+fi
 (( $+commands[register-python-argcomplete] )) && eval "$(register-python-argcomplete pipx)"
-[ -s "/Users/cmin/.bun/_bun" ] && source "/Users/cmin/.bun/_bun"
+[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 
 # pyenv shell integration
 (( $+commands[pyenv] )) && eval "$(pyenv init - zsh)"
