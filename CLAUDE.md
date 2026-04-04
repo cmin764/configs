@@ -20,7 +20,7 @@
 ## Git & Version Control
 
 - Do not commit unless explicitly asked. Always ask for pre-approval. Only commit autonomously when granted explicit session permission.
-- Commit messages: short, no detailed descriptions. No co-authored-by signatures involving Claude.
+- Commit messages and PRs: short, no detailed descriptions. No co-authored-by signatures involving Claude.
 
 ## External Tools
 
