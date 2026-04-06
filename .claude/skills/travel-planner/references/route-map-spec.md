@@ -39,6 +39,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 #header { padding: 14px 18px 10px; background: #fff; border-bottom: 1px solid #e0ddd5; }
 #header h1 { font-size: 16px; font-weight: 600; color: #1a1a1a; }
 #header p  { font-size: 12px; color: #777; margin-top: 2px; }
+/* Header meta line format: "Traveler names · Start–End date · N nights · Exit FLIGHT CODES ROUTE"
+   Example: "Cosmin & Georgiana · Mar 21–Apr 11 · 21 nights · Exit AV8505+AV159 SMR→MDE→UIO"
+   Omit the exit segment if no exit flight is booked yet. */
 
 #map { width: 100%; height: calc(100vh - 104px); }  /* fills viewport between header and legend */
 

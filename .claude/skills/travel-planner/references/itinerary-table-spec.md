@@ -119,9 +119,13 @@ ul.al li::before { content: "·"; position: absolute; left: 0; color: #aaa; }
 
 ## Section divider rows
 
+Section divider text format: `ALL CAPS REGION — Title Case city or sub-region descriptor`
+
+Examples: `ANDEAN HIGHLANDS — Bogotá`, `COFFEE REGION — Salento & Pereira`, `CARIBBEAN COAST — Santa Marta & Tayrona`
+
 ```html
 <tr class="sec">
-  <td colspan="7" style="border-left:3px solid [REGION_COLOR];">[Region name — short descriptor]</td>
+  <td colspan="7" style="border-left:3px solid [REGION_COLOR];">[REGION NAME — City or sub-region]</td>
 </tr>
 ```
 

@@ -76,7 +76,7 @@ Read `references/itinerary-table-spec.md` for the full HTML/CSS specification,
 design tokens, component classes, and markup patterns.
 
 **Columns:**
-| Base | Check-in → out | Nights | Getting there | Daily activities | Day trips / optional | WiFi |
+| Base | Check-in → out | Nights | Getting there | Self-guided activities | Agency / guided | WiFi |
 
 **Rows:**
 - Section dividers (colored left border matching transport color) for each
@@ -92,14 +92,26 @@ design tokens, component classes, and markup patterns.
   Santo Domingo."
 - Day trips column: include cost, duration, booking requirement, and whether
   to book ahead.
-- Getting there: exact transport mode, rough cost, duration, operator name if
-  known, and any known friction (e.g., "Uber blocked at this airport — use
-  pre-arranged transfer").
-- WiFi column: Good / Variable / Poor / None. Add a sub-note if context
+- Getting there: always show two hops. (1) Inter-city transport badge at the
+  top. (2) A `font-size:12px` sub-block for "Airport/station → accommodation"
+  with app recommendation, approximate cost, and duration. Use `ul.al` with
+  Best / Budget / Avoid for airports with multiple realistic options. Include
+  operator name and known friction (e.g., "Uber blocked here — pre-arranged
+  transfer only").
+- Activities cell: end every cell with a `.note` showing the workday structure
+  for that base — morning work block hours, then what type of afternoon the
+  location best supports (nature, culture, food, rest). One sentence.
+- WiFi column: Excellent / Good / Variable / Poor / None. Excellent is green,
+  Good/Variable are blue, Poor/None are red. Add a `.sub` caveat if context
   matters (e.g., "None inside park").
-- Warn badges (amber) for: tight connections, cash-only locations, areas
-  requiring advance booking, luggage restrictions.
-- Confirmed badges (green) for: booked flights, confirmed accommodation.
+- Warn badges (amber `.warn`) for: tight connections, cash-only locations,
+  areas requiring advance booking, luggage restrictions. Standalone callouts,
+  not attached to a specific booking.
+- Confirmed badges (green `.conf`) for: booked flights, confirmed
+  accommodation.
+- Updated badges (amber `.upd`) for: revised flights, changed accommodation,
+  any previously confirmed item whose details changed. Attaches inline to the
+  specific badge, not a standalone callout.
 
 ---
 
