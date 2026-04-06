@@ -25,6 +25,7 @@ No config required. Clone the repo, open Claude Code, done.
 | Skill | What it does |
 |-------|-------------|
 | [job-fit-assessor](./job-fit-assessor/) | Assesses a candidate profile against any JD, producing a scored, filterable React artifact with per-requirement annotations |
+| [travel-planner](./travel-planner/) | Generates a paired itinerary table + interactive Leaflet route map from raw trip data (dates, flights, transport legs, activities) |
 
 ---
 
