@@ -41,6 +41,8 @@ Two outputs, always paired: an **itinerary table** (HTML) and a **route map**
   never anything with "backpacker" in the name or description.
 - Private bathroom and entrance non-negotiable.
 - Quiet at night, natural light during the day.
+- Good ventilation / air circulation. Openable windows on multiple sides
+  preferred; AC is not a substitute for natural airflow.
 - Authentic residential neighborhoods over tourist zones.
 - Host track record weighted heavily (10+ reviews preferred).
 - WiFi verification before booking: message every host "Do you have Starlink?"
@@ -148,7 +150,12 @@ marker patterns, arc drawing functions, signal zones, and popup templates.
 
 ## Build Process
 
-1. Parse all input (dates, locations, flights, accommodation, activities).
+1. Establish booking sequencing order before planning logistics: most
+   constrained accommodation first (island lodges, popular park-adjacent stays,
+   Carnival-season cities), day tours second, transport legs last. Flag any
+   confirmed items out of this order as a warn badge — flights booked before
+   accommodation exists is a common trip-breaking mistake.
+2. Parse all input (dates, locations, flights, accommodation, activities).
 2. Geocode each location — look up approximate lat/lng coordinates.
 3. Build itinerary table first — it forces you to clarify every leg before
    drawing lines on a map.
@@ -189,6 +196,10 @@ Surface these in the itinerary footer or as warn badges without being asked:
 - IVA/tax exemptions available to tourists (Colombia, Ecuador, etc.)
 - "Higher on the hill = higher risk" for neighborhood safety assessments
 - Host with fewer than 5 reviews → flag track record gap
+- Transit-constrained locations (island ferries or park boats running once per
+  day): flag that all transport legs should be afternoon-slotted to protect the
+  morning work block. Note the specific cutoff time if known (e.g., "3PM ferry
+  — last slot, book immediately").
 
 ---
 

@@ -65,6 +65,7 @@ const modeColors = {
   FLY:      '#1d4ed8',  // blue
   BUS:      '#b45309',  // amber
   WILLY:    '#b45309',  // amber (jeep/colectivo — same as BUS)
+  SHUTTLE:  '#d97706',  // amber (pre-booked shared van — Central America, tourist shuttles)
   BOAT:     '#0891b2',  // teal
   TAXI:     '#6b7280',  // grey
   TRANSFER: '#16a34a',  // green (pre-booked private)
@@ -249,6 +250,7 @@ Radius in meters. Match to real geographic extent of the area.
   <div class="li"><span class="line" style="background:#1d4ed8;"></span><span class="badge" style="background:#1d4ed8;">FLY</span> flight</div>
   <div class="li"><span class="line" style="background:#b45309;"></span><span class="badge" style="background:#b45309;">BUS</span> bus / coach</div>
   <div class="li"><span class="line" style="background:#b45309;"></span><span class="badge" style="background:#b45309;">WILLY</span> jeep colectivo</div>
+  <div class="li"><span class="line" style="background:#d97706;"></span><span class="badge" style="background:#d97706;">SHUTTLE</span> shared pre-booked van</div>
   <div class="li"><span class="line" style="background:#16a34a;"></span><span class="badge" style="background:#16a34a;">TRANSFER</span> pre-booked transfer</div>
   <div class="li"><span class="line" style="background:#0891b2;"></span><span class="badge" style="background:#0891b2;">BOAT</span> boat / ferry</div>
   <div class="li"><span class="line" style="background:#6b7280;"></span><span class="badge" style="background:#6b7280;">TAXI</span> taxi / Uber</div>

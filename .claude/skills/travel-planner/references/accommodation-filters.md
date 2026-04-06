@@ -46,7 +46,7 @@ it, ask for a speed test screenshot. No screenshot = treat as unknown.
 - Walking distance to a supermarket
 - Within 15 minutes of main transport axis (metro, main road, bus stop)
 - Not on a hillside above the safer flat zone
-- Avoid the immediate Parque Lleras / party zone radius in El Poblado
+- Avoid the immediate party-zone / nightlife nucleus of any city (the specific area varies — research per destination; noise bleeds in regardless of how the listing describes itself)
 
 **Cleaning fee logic**
 - High cleaning fee relative to stay length = negotiate or skip

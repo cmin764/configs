@@ -11,12 +11,15 @@
 |------------|---------|-----------|--------------|-------------------------------|
 | FLY        | Blue    | #3b82f6   | 8,4 dashed   | All flights                   |
 | BUS        | Amber   | #d97706   | solid        | Long-distance coaches          |
-| WILLY      | Amber   | #d97706   | 4,3 dotted   | Jeeps / colectivos / shared    |
+| WILLY      | Amber   | #d97706   | 4,3 dotted   | Jeeps / colectivos / shared (spontaneous, local) |
+| SHUTTLE    | Amber   | #d97706   | solid        | Pre-booked shared tourist van (Central America, border runs) |
 | BOAT       | Teal    | #0891b2   | solid        | Ferries, water taxis, lancha   |
 | TAXI       | Grey    | #6b7280   | solid        | Pre-arranged or app-booked     |
 | TRANSFER   | Green   | #16a34a   | solid        | Private pre-booked transfer    |
 | METRO      | Purple  | #7c3aed   | solid        | Urban metro / cable car        |
 | WALK       | Grey    | #9ca3af   | 2,4 dotted   | Walking legs only              |
+
+WILLY vs SHUTTLE vs TRANSFER: WILLY = spontaneous colectivo/jeep you flag down; SHUTTLE = pre-booked shared van through an agency, fixed route, hotel pickup; TRANSFER = fully private, door-to-door.
 
 Arc label format: `MODE · ~Xkm · Xh` or `MODE · ~Xkm · Xmin`
 
@@ -38,9 +41,9 @@ Arc label format: `MODE · ~Xkm · Xh` or `MODE · ~Xkm · Xmin`
 - Bus (long-distance): $5-15 USD
 
 ### Central America (general)
-- Shuttle services: $15-40 USD/person per leg
+- SHUTTLE (pre-booked shared van, agency-organized, hotel-to-hotel): $15-40 USD/person per leg. Different from WILLY (spontaneous local) and TRANSFER (fully private). Book through hostels, travel agencies, or GetYourGuide.
 - Water taxi: $5-20 USD/person
-- Public bus: $1-5 USD
+- Public bus ("chicken bus", repurposed US school bus): $1-5 USD
 
 ## Booking lead times (flag these in warn badges)
 

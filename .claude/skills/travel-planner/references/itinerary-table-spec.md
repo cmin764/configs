@@ -66,6 +66,7 @@ tr:last-child td { border-bottom: none; }
 .bb  { background: #f1f0eb; color: #555; border: .5px solid #d0cec6; }       /* BUS/OVERLAND — neutral grey */
 .bj  { background: #fef9c3; color: #713f12; border: .5px solid #fde68a; }    /* JEEP/WILLY/COLECTIVO — amber */
 .bt  { background: #f3e8ff; color: #6b21a8; border: .5px solid #e9d5ff; }    /* BOAT/FERRY/WATER — purple */
+.bs  { background: #fef3c7; color: #78350f; border: .5px solid #fcd34d; }    /* SHUTTLE/SHARED VAN — deep amber (Central America, pre-booked tourist vans) */
 
 /* Inline status tags (appended after badge text) */
 .upd  { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: #fef3c7; color: #92400e; font-weight: 600; margin-left: 5px; }  /* "UPDATED" */
@@ -137,20 +138,21 @@ Base rows in that region also carry the border:
 </tr>
 ```
 
-Pick one distinct color per region. Use muted, not garish:
-- Andean highlands: `#888780` (warm grey)
-- Coffee/rural: `#EF9F27` (amber)
-- City/metro: `#7F77DD` (muted purple)
-- Caribbean coast: `#D85A30` (terracotta)
-- Pacific coast: `#1D9E75` (teal)
-- Exit/transit: `#378ADD` (blue)
+Pick one distinct color per region. Use muted, not garish. Label by travel
+context, not geography — these apply to any continent:
+- Mountains / highlands: `#888780` (warm grey)
+- Rural / countryside: `#EF9F27` (amber)
+- Urban / city: `#7F77DD` (muted purple)
+- Tropical coast / islands: `#D85A30` (terracotta)
+- Rainforest / jungle coast: `#1D9E75` (teal)
+- Exit / transit: `#378ADD` (blue)
 
 Night circle colors should roughly match:
-- Andean: `background:#D3D1C7; color:#2C2C2A`
-- Coffee: `background:#FAC775; color:#412402`
-- City: `background:#AFA9EC; color:#26215C`
-- Caribbean: `background:#F0997B; color:#4A1B0C`
-- Coast: `background:#5DCAA5; color:#04342C`
+- Mountains: `background:#D3D1C7; color:#2C2C2A`
+- Rural: `background:#FAC775; color:#412402`
+- Urban: `background:#AFA9EC; color:#26215C`
+- Tropical coast: `background:#F0997B; color:#4A1B0C`
+- Rainforest: `background:#5DCAA5; color:#04342C`
 
 ---
 
