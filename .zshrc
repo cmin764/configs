@@ -23,3 +23,6 @@ if (( $+commands[brew] )); then
     fi
     unset _nvm_prefix
 fi
+
+# Claude Code — disable auto-update; run `claude update` manually to upgrade
+export DISABLE_AUTOUPDATER=1

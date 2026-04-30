@@ -77,6 +77,12 @@ Directness serves clarity, not ego. Critique the work, never the person.
 - Ask permission before posting comments to GitHub PRs via `gh api`. Show draft content and target (PR number, comment ID) before posting.
 - In tickets: separate "why" (motivation) and "what" (acceptance criteria) from "how" (technical details). The "how" belongs in a committed blueprint doc, not the ticket.
 
+## Diagrams
+
+- **Mermaid node labels:** never use `\n` for line breaks — it renders literally. Use `<br/>` for an actual break, or keep labels single-line with ` — ` as a separator.
+
 ## Security
 
 - Never read or transmit unencrypted secrets outside this machine.
+
+@RTK.md
