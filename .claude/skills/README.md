@@ -24,8 +24,35 @@ No config required. Clone the repo, open Claude Code, done.
 
 | Skill | What it does |
 |-------|-------------|
+| [disk-janitor](./disk-janitor/) | Detects reclaimable disk space on macOS and cleans it via a tiered Python script (dry-run by default, progressive aggressiveness levels) |
 | [job-fit-assessor](./job-fit-assessor/) | Assesses a candidate profile against any JD, producing a scored, filterable React artifact with per-requirement annotations |
 | [travel-planner](./travel-planner/) | Generates a paired itinerary table + interactive Leaflet route map from raw trip data (dates, flights, transport legs, activities) |
+
+---
+
+## Using disk-janitor
+
+Run from anywhere — the script path is relative to the repo root:
+
+```bash
+# See what's reclaimable (dry-run, safe to run anytime)
+python3 .claude/skills/disk-janitor/scripts/cleanup.py --level 2
+
+# Clean package-manager caches only (level 1)
+python3 .claude/skills/disk-janitor/scripts/cleanup.py --apply
+
+# Clean levels 1+2 (includes Chrome, JetBrains, logs, docker prune)
+python3 .claude/skills/disk-janitor/scripts/cleanup.py --level 2 --apply
+
+# Target specific tools
+python3 .claude/skills/disk-janitor/scripts/cleanup.py --apply --only brew,uv
+
+# Machine-readable output
+python3 .claude/skills/disk-janitor/scripts/cleanup.py --level 2 --json
+```
+
+Or trigger via Claude Code: "my Mac is full", "free up disk space", "clear caches" etc.
+Claude runs the dry-run first and walks you through the cleanup interactively.
 
 ---
 

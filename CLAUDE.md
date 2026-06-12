@@ -11,6 +11,13 @@
 - Simplest solution first. Improve iteratively through follow-up suggestions, not big-bang refactors.
 - SOLID, DRY, YAGNI. Recommend design patterns when they earn their keep, skip gratuitous OOP.
 
+## Model Selection
+
+Match model to task when delegating to subagents or choosing a model:
+- Haiku: basic, well-specified script and CLI tooling, mechanical edits, deterministic transforms.
+- Sonnet (medium effort): executing an already-agreed plan or blueprint, straight codegen against a clear spec.
+- Opus / Fable: high-level reasoning, architecture, planning, and decisions where tradeoffs carry weight.
+
 ## Comments & Documentation
 
 - Comments explain WHY the code exists and WHAT EFFECT it produces, not what it does. Keep them conceptual, no variable or method names in prose.
