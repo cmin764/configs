@@ -25,6 +25,7 @@ No config required. Clone the repo, open Claude Code, done.
 | Skill | What it does |
 |-------|-------------|
 | [disk-janitor](./disk-janitor/) | Detects reclaimable disk space on macOS and cleans it via a tiered Python script (dry-run by default, progressive aggressiveness levels) |
+| [frontend-review](./frontend-review/) | Stack-aware pre-merge review for any React/Next.js project: detects the stack, applies a unified a11y/SEO/security/perf/TS/Tailwind checklist, fixes criticals (tiered via `--fix`) |
 | [job-fit-assessor](./job-fit-assessor/) | Assesses a candidate profile against any JD, producing a scored, filterable React artifact with per-requirement annotations |
 | [travel-planner](./travel-planner/) | Generates a paired itinerary table + interactive Leaflet route map from raw trip data (dates, flights, transport legs, activities) |
 
