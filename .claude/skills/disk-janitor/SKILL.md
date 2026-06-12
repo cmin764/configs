@@ -77,6 +77,9 @@ python3 scripts/cleanup.py --level 3 --apply --include-dangerous
 
 # Tune age thresholds
 python3 scripts/cleanup.py --level 3 --chats-older-than 60 --stale-days 14 --apply
+
+# Override project scan root (default: auto-detects Work/Projects/dev/src/repos under ~)
+python3 scripts/cleanup.py --level 3 --work-dir ~/code --apply
 ```
 
 ---

@@ -42,7 +42,7 @@ the `~/.claude/` root and tool configs are never touched.
 
 | Target | Path(s) | Measure | Apply action | Risk |
 |--------|---------|---------|--------------|------|
-| node_modules | `~/Work/**/node_modules` (depth ≤ 4) | `du -sh` per dir; filter by project last-touched mtime | delete `node_modules/` dir only (never the project root) | Med — `npm/bun install` needed before next run |
+| node_modules | `<work-dir>/**/node_modules` (depth ≤ 4) | `du -sh` per dir; filter by project last-touched mtime | delete `node_modules/` dir only (never the project root) | Med — `npm/bun install` needed before next run |
 | xcode | `~/Library/Developer/Xcode/DerivedData`, `~/Library/Developer/Xcode/Archives`, `~/Library/Developer/CoreSimulator/Devices` | `du -sh` each | delete contents | Med — Xcode rebuilds; simulators re-downloaded |
 | brew-prune-all | `~/Library/Caches/Homebrew` | `brew cleanup -n --prune=all` | `brew cleanup -s --prune=all` | Med — removes all cached bottles, not just expired |
 
@@ -50,7 +50,7 @@ the `~/.claude/` root and tool configs are never touched.
 
 - Only `node_modules` subdirectories are ever deleted, never the project root.
 - Projects touched within `--stale-days` (default 30) are skipped.
-- The scan is capped at 4 directory levels deep under `~/Work` to avoid
+- The scan is capped at 4 directory levels deep under the work dir to avoid
   surprises in deeply nested monorepos.
 - A project is considered "touched" if any file in the project root (excluding
   node_modules itself) has mtime within the stale window.
@@ -97,7 +97,7 @@ allowlist raises an error and skips the target:
 ~/.claude/shell-snapshots
 ~/.claude/paste-cache
 ~/.claude/cache
-~/Work/  (node_modules subdirs only)
+<work-dir>/  (node_modules subdirs only; auto-detected or set via --work-dir)
 ~/Library/Logs/
 ~/Library/Developer/Xcode/DerivedData
 ~/Library/Developer/Xcode/Archives

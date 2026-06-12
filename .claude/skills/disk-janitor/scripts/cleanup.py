@@ -23,8 +23,18 @@ from pathlib import Path
 
 HOME = Path.home()
 
+# Common project directory names to probe when --work-dir is not specified.
+_WORK_DIR_CANDIDATES = ["Work", "Projects", "projects", "dev", "code", "src", "repos"]
+
+
+def _detect_work_dirs() -> list[Path]:
+    found = [HOME / name for name in _WORK_DIR_CANDIDATES if (HOME / name).is_dir()]
+    return found or [HOME]
+
+
 # Paths outside this allowlist are never deleted, even if a target resolves there.
-ALLOWLIST = [
+# Work dirs are added dynamically once args are parsed (see _build_allowlist).
+_ALLOWLIST_BASE = [
     HOME / "Library" / "Caches",
     HOME / ".cache",
     HOME / ".npm",
@@ -33,12 +43,19 @@ ALLOWLIST = [
     HOME / ".claude" / "shell-snapshots",
     HOME / ".claude" / "paste-cache",
     HOME / ".claude" / "cache",
-    HOME / "Work",
     HOME / "Library" / "Logs",
     HOME / "Library" / "Developer" / "Xcode" / "DerivedData",
     HOME / "Library" / "Developer" / "Xcode" / "Archives",
     HOME / "Library" / "Developer" / "CoreSimulator" / "Devices",
 ]
+
+ALLOWLIST: list[Path] = []
+
+
+def _build_allowlist(work_dirs: list[Path]) -> None:
+    ALLOWLIST.clear()
+    ALLOWLIST.extend(_ALLOWLIST_BASE)
+    ALLOWLIST.extend(work_dirs)
 
 
 def _in_allowlist(path: Path) -> bool:
@@ -200,35 +217,38 @@ def _apply_docker(include_dangerous: bool, yes: bool) -> int:
     return max(0, before - after)
 
 
-def _find_stale_node_modules(stale_days: int) -> list[tuple[Path, int]]:
+def _find_stale_node_modules(stale_days: int, work_dirs: list[Path]) -> list[tuple[Path, int]]:
     cutoff = time.time() - stale_days * 86400
     results = []
-    work = HOME / "Work"
-    if not work.exists():
-        return results
-    # Walk up to depth 4 looking for node_modules dirs.
-    for nm in work.glob("**/node_modules"):
-        if nm.stat().st_mtime > cutoff:
+    seen: set[Path] = set()
+    for work in work_dirs:
+        if not work.exists():
             continue
-        # Guard: the parent project root should be recent enough to be "stale."
-        project = nm.parent
-        try:
-            project_mtime = max(
-                p.stat().st_mtime for p in project.iterdir()
-                if p.name != "node_modules"
-            )
-        except (StopIteration, ValueError, OSError):
-            project_mtime = nm.stat().st_mtime
-        if project_mtime > cutoff:
-            continue
-        if not _in_allowlist(nm):
-            continue
-        results.append((nm, _du(nm)))
+        for nm in work.glob("**/node_modules"):
+            if nm.resolve() in seen:
+                continue
+            seen.add(nm.resolve())
+            if nm.stat().st_mtime > cutoff:
+                continue
+            # Guard: the parent project root should be recent enough to be "stale."
+            project = nm.parent
+            try:
+                project_mtime = max(
+                    p.stat().st_mtime for p in project.iterdir()
+                    if p.name != "node_modules"
+                )
+            except (StopIteration, ValueError, OSError):
+                project_mtime = nm.stat().st_mtime
+            if project_mtime > cutoff:
+                continue
+            if not _in_allowlist(nm):
+                continue
+            results.append((nm, _du(nm)))
     return results
 
 
-def _apply_node_modules(stale_days: int, dry_run: bool, yes: bool) -> list[dict]:
-    targets = _find_stale_node_modules(stale_days)
+def _apply_node_modules(stale_days: int, work_dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
+    targets = _find_stale_node_modules(stale_days, work_dirs)
     results = []
     for nm, size in targets:
         freed = 0
@@ -285,10 +305,13 @@ def parse_args() -> argparse.Namespace:
                    help="Age threshold for Claude chat pruning (default: 30)")
     p.add_argument("--stale-days", type=int, default=30, metavar="DAYS",
                    help="Age threshold for stale node_modules (default: 30)")
+    p.add_argument("--work-dir", type=str, default="", metavar="DIR",
+                   help="Directory to scan for stale node_modules (default: auto-detect "
+                        f"from {_WORK_DIR_CANDIDATES})")
     return p.parse_args()
 
 
-def build_report(args: argparse.Namespace) -> list[dict]:
+def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
     only = set(args.only.split(",")) - {""} if args.only else set()
     skip = set(args.skip.split(",")) - {""} if args.skip else set()
     dry_run = not args.apply
@@ -407,7 +430,7 @@ def build_report(args: argparse.Namespace) -> list[dict]:
     # --- Level 3: aggressive ---
 
     if active("node_modules", 3):
-        nm_results = _apply_node_modules(args.stale_days, dry_run=dry_run, yes=args.yes)
+        nm_results = _apply_node_modules(args.stale_days, work_dirs, dry_run=dry_run, yes=args.yes)
         size = sum(r["size"] for r in nm_results)
         freed = sum(r["freed"] for r in nm_results)
         note = f"{len(nm_results)} dirs untouched >{args.stale_days}d; reinstall needed"
@@ -446,6 +469,9 @@ def main() -> None:
     args = parse_args()
     dry_run = not args.apply
 
+    work_dirs = [Path(args.work_dir).expanduser()] if args.work_dir else _detect_work_dirs()
+    _build_allowlist(work_dirs)
+
     disk = shutil.disk_usage("/")
     free_before = disk.free
 
@@ -454,7 +480,7 @@ def main() -> None:
         print(f"\n=== disk-janitor [{mode}] level={args.level} ===")
         print(f"Free before: {_fmt(free_before)} / {_fmt(disk.total)}\n")
 
-    report = build_report(args)
+    report = build_report(args, work_dirs)
 
     free_after = shutil.disk_usage("/").free
     total_reclaimable = sum(r["reclaimable"] for r in report)
