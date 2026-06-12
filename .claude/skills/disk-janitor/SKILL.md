@@ -89,8 +89,14 @@ python3 scripts/cleanup.py --level 3 --work-dir ~/code --apply
 - Nothing is deleted without `--apply`.
 - Delete paths are validated against an allowlist of known cache roots.
 - Missing CLIs (brew, uv, docker, etc.) are skipped gracefully.
-- Level 3 and dangerous targets prompt for confirmation unless `--yes`.
+- Level 3 targets (node_modules per-dir, xcode) and dangerous targets prompt for
+  confirmation unless `--yes`.
+- Only top-level node_modules of stale projects are deleted, never nested ones.
+- Claude chat pruning removes session transcripts only; persistent memory under
+  `~/.claude/projects/*/memory/` is never touched.
+- claude-tmp only removes entries older than 24h, so the live session survives.
 - Docker volumes are never touched except via the explicit `--include-dangerous` path.
+- Unknown `--only`/`--skip` names fail fast with the list of valid targets.
 
 ---
 

@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,19 @@ from pathlib import Path
 HOME = Path.home()
 _TMP_DIR = Path("/private/tmp") if Path("/private/tmp").exists() else Path("/tmp")
 _CLAUDE_TMP = _TMP_DIR / f"claude-{os.getuid()}"
+
+# Claude Code may be running this very script; only tmp entries older than this
+# are touched so the live session's buffers survive.
+_CLAUDE_TMP_MAX_AGE_S = 24 * 3600
+
+# Scan depth under each work dir when hunting node_modules.
+_NM_MAX_DEPTH = 4
+
+KNOWN_TARGETS = {
+    "brew", "uv", "pip", "npm", "bun", "trash", "claude-tmp",
+    "chrome", "jetbrains", "logs", "claude-cache", "claude-chats", "docker",
+    "node_modules", "xcode", "docker-volumes",
+}
 
 # Common project directory names to probe when --work-dir is not specified.
 _WORK_DIR_CANDIDATES = ["Work", "Projects", "projects", "dev", "code", "src", "repos"]
@@ -92,11 +106,11 @@ def _has(binary: str) -> bool:
     return shutil.which(binary) is not None
 
 
-def _fmt(b: int) -> str:
+def _fmt(b: float) -> str:
     for unit in ("B", "K", "M", "G"):
         if b < 1024:
             return f"{b:.1f}{unit}"
-        b //= 1024
+        b /= 1024
     return f"{b:.1f}T"
 
 
@@ -127,10 +141,13 @@ def _delete_old_files(path: Path, days: int, dry_run: bool) -> int:
     cutoff = time.time() - days * 86400
     total = 0
     for p in path.rglob("*"):
-        if p.is_file() and p.stat().st_mtime < cutoff:
-            total += p.stat().st_size
-            if not dry_run:
-                p.unlink(missing_ok=True)
+        try:
+            if p.is_file() and p.stat().st_mtime < cutoff:
+                total += p.stat().st_size
+                if not dry_run:
+                    p.unlink(missing_ok=True)
+        except OSError:
+            continue
     return total
 
 
@@ -145,7 +162,9 @@ def _measure_brew() -> int:
     total = 0
     for line in result.stdout.splitlines():
         if line.startswith("Would remove:"):
-            p = Path(line.split(":", 1)[1].strip())
+            # Brew appends a size suffix like " (1.2MB)" to each path.
+            raw = re.sub(r"\s*\([^)]*\)\s*$", "", line.split(":", 1)[1].strip())
+            p = Path(raw)
             if p.exists():
                 total += p.stat().st_size if p.is_file() else _du(p)
     if total == 0:
@@ -182,12 +201,13 @@ def _apply_cli(cli: list[str], path: Path) -> int:
 def _measure_docker() -> int:
     if not _has("docker"):
         return 0
-    result = _run(["docker", "system", "df", "--format", "{{.Size}}"])
+    result = _run(["docker", "system", "df", "--format", "{{.Reclaimable}}"])
     if result.returncode != 0:
         return 0
     total = 0
     for line in result.stdout.splitlines():
-        line = line.strip().rstrip("B")
+        # Reclaimable values look like "1.185GB (100%)" — drop the percentage.
+        line = re.sub(r"\s*\([^)]*\)\s*$", "", line.strip()).rstrip("B")
         try:
             if line.endswith("G"):
                 total += int(float(line[:-1]) * 1024 ** 3)
@@ -221,32 +241,48 @@ def _apply_docker(include_dangerous: bool, yes: bool) -> int:
 
 
 def _find_stale_node_modules(stale_days: int, work_dirs: list[Path]) -> list[tuple[Path, int]]:
+    """Find top-level node_modules dirs of projects untouched within the stale window.
+
+    Nested node_modules (inside another node_modules) are never returned: deleting
+    one would corrupt a possibly-active project's dependency tree. The walk prunes
+    hidden dirs, never descends into a matched node_modules, and stops at
+    _NM_MAX_DEPTH levels under each work dir.
+    """
     cutoff = time.time() - stale_days * 86400
     results = []
     seen: set[Path] = set()
     for work in work_dirs:
         if not work.exists():
             continue
-        for nm in work.glob("**/node_modules"):
-            if nm.resolve() in seen:
+        base_depth = len(work.resolve().parts)
+        for root, dirs, _files in os.walk(work):
+            root_path = Path(root)
+            depth = len(root_path.resolve().parts) - base_depth
+            if depth >= _NM_MAX_DEPTH:
+                dirs.clear()
                 continue
-            seen.add(nm.resolve())
-            if nm.stat().st_mtime > cutoff:
-                continue
-            # Guard: the parent project root should be recent enough to be "stale."
-            project = nm.parent
-            try:
-                project_mtime = max(
-                    p.stat().st_mtime for p in project.iterdir()
-                    if p.name != "node_modules"
-                )
-            except (StopIteration, ValueError, OSError):
-                project_mtime = nm.stat().st_mtime
-            if project_mtime > cutoff:
-                continue
-            if not _in_allowlist(nm):
-                continue
-            results.append((nm, _du(nm)))
+            if "node_modules" in dirs:
+                dirs.remove("node_modules")
+                nm = root_path / "node_modules"
+                if nm.resolve() in seen:
+                    continue
+                seen.add(nm.resolve())
+                if not _in_allowlist(nm):
+                    continue
+                if nm.stat().st_mtime > cutoff:
+                    continue
+                # Guard: skip if anything in the project root was touched recently.
+                try:
+                    project_mtime = max(
+                        p.stat().st_mtime for p in root_path.iterdir()
+                        if p.name != "node_modules"
+                    )
+                except (StopIteration, ValueError, OSError):
+                    project_mtime = nm.stat().st_mtime
+                if project_mtime > cutoff:
+                    continue
+                results.append((nm, _du(nm)))
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
     return results
 
 
@@ -265,19 +301,60 @@ def _apply_node_modules(stale_days: int, work_dirs: list[Path], dry_run: bool, y
 
 
 def _prune_claude_chats(days: int, dry_run: bool) -> int:
+    """Prune old session transcripts under ~/.claude/projects.
+
+    Each project dir holds session .jsonl files, per-session subdirs, and a
+    persistent memory/ dir. Only session files (and their matching subdir) older
+    than the cutoff are removed; memory and the project dir itself are never
+    touched.
+    """
     projects_dir = HOME / ".claude" / "projects"
     if not projects_dir.exists():
         return 0
     cutoff = time.time() - days * 86400
     total = 0
-    for session in projects_dir.iterdir():
-        if not session.is_dir():
+    for project in projects_dir.iterdir():
+        if not project.is_dir():
             continue
-        if session.stat().st_mtime < cutoff:
-            size = _du(session)
+        for entry in project.glob("*.jsonl"):
+            try:
+                if entry.stat().st_mtime >= cutoff:
+                    continue
+                size = entry.stat().st_size
+            except OSError:
+                continue
+            session_dir = project / entry.stem
+            if session_dir.is_dir() and session_dir.name != "memory":
+                size += _du(session_dir)
             total += size
             if not dry_run:
-                shutil.rmtree(session, ignore_errors=True)
+                entry.unlink(missing_ok=True)
+                if session_dir.is_dir() and session_dir.name != "memory":
+                    shutil.rmtree(session_dir, ignore_errors=True)
+    return total
+
+
+def _clean_claude_tmp(dry_run: bool) -> int:
+    """Remove aged entries from Claude Code's tmp dir, sparing live sessions."""
+    if not _CLAUDE_TMP.exists():
+        return 0
+    if not _in_allowlist(_CLAUDE_TMP):
+        return 0
+    cutoff = time.time() - _CLAUDE_TMP_MAX_AGE_S
+    total = 0
+    for entry in _CLAUDE_TMP.iterdir():
+        try:
+            if entry.stat().st_mtime >= cutoff:
+                continue
+            size = _du(entry) if entry.is_dir() else entry.stat().st_size
+        except OSError:
+            continue
+        total += size
+        if not dry_run:
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
     return total
 
 
@@ -311,7 +388,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--work-dir", type=str, default="", metavar="DIR",
                    help="Directory to scan for stale node_modules (default: auto-detect "
                         f"from {_WORK_DIR_CANDIDATES})")
-    return p.parse_args()
+    args = p.parse_args()
+    for flag in ("only", "skip"):
+        names = set(getattr(args, flag).split(",")) - {""}
+        unknown = names - KNOWN_TARGETS
+        if unknown:
+            p.error(f"--{flag}: unknown target(s) {sorted(unknown)}; "
+                    f"valid: {sorted(KNOWN_TARGETS)}")
+    return args
 
 
 def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
@@ -341,9 +425,10 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
         report.append({"target": "brew", "level": 1, "reclaimable": size, "freed": freed,
                         "risk": "low", "note": "brew cleanup -s"})
 
+    pip_bin = "pip" if _has("pip") else "pip3"
     cli_targets = [
         ("uv", HOME / ".cache" / "uv", ["uv", "cache", "prune"]),
-        ("pip", HOME / "Library" / "Caches" / "pip", ["pip", "cache", "purge"]),
+        ("pip", HOME / "Library" / "Caches" / "pip", [pip_bin, "cache", "purge"]),
         ("npm", HOME / ".npm" / "_cacache", ["npm", "cache", "clean", "--force"]),
         ("bun", HOME / "Library" / "Caches" / "bun", ["bun", "pm", "cache", "rm"]),
     ]
@@ -371,13 +456,13 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
                         "risk": "low", "note": "~/.Trash"})
 
     if active("claude-tmp", 1):
-        size = _du(_CLAUDE_TMP)
+        size = _clean_claude_tmp(dry_run=True)
         freed = 0
         if not dry_run and size > 0:
-            freed = _delete_dir(_CLAUDE_TMP, dry_run=False)
+            freed = _clean_claude_tmp(dry_run=False)
         report.append({"target": "claude-tmp", "level": 1, "reclaimable": size, "freed": freed,
                         "risk": "low",
-                        "note": f"{_CLAUDE_TMP} (session task/tool buffers; safe when CC is not running)"})
+                        "note": f"{_CLAUDE_TMP} entries older than 1d (live session preserved)"})
 
     # --- Level 2: app caches + logs + Claude ---
 
@@ -451,18 +536,28 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
                         "details": [r["path"] for r in nm_results]})
 
     if active("xcode", 3):
-        xcode_paths = [
+        build_paths = [
             HOME / "Library" / "Developer" / "Xcode" / "DerivedData",
             HOME / "Library" / "Developer" / "Xcode" / "Archives",
-            HOME / "Library" / "Developer" / "CoreSimulator" / "Devices",
         ]
-        size = sum(_du(p) for p in xcode_paths)
+        sim_path = HOME / "Library" / "Developer" / "CoreSimulator" / "Devices"
+        size = sum(_du(p) for p in build_paths) + _du(sim_path)
         freed = 0
-        if not dry_run:
-            for p in xcode_paths:
-                freed += _delete_dir(p, dry_run=False)
+        if not dry_run and size > 0:
+            if args.yes or _confirm(f"  Delete Xcode DerivedData/Archives + prune simulators ({_fmt(size)})?"):
+                for p in build_paths:
+                    freed += _delete_dir(p, dry_run=False)
+                # Official CLI removes only orphaned simulator data; fall back to
+                # deleting the dir when xcrun is unavailable.
+                if sim_path.exists():
+                    before = _du(sim_path)
+                    if _has("xcrun"):
+                        _run(["xcrun", "simctl", "delete", "unavailable"])
+                        freed += max(0, before - _du(sim_path))
+                    else:
+                        freed += _delete_dir(sim_path, dry_run=False)
         report.append({"target": "xcode", "level": 3, "reclaimable": size, "freed": freed,
-                        "risk": "med", "note": "DerivedData + Archives + Simulators"})
+                        "risk": "med", "note": "DerivedData + Archives + unavailable simulators"})
 
     # --- Dangerous ---
 
