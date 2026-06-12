@@ -55,6 +55,7 @@ _ALLOWLIST_BASE = [
     HOME / "Library" / "Caches",
     HOME / ".cache",
     HOME / ".npm",
+    HOME / ".bun" / "install" / "cache",
     HOME / ".Trash",
     HOME / ".claude" / "projects",
     HOME / ".claude" / "shell-snapshots",
@@ -103,7 +104,11 @@ def _run(cmd: list[str], check: bool = False) -> subprocess.CompletedProcess:
 
 
 def _has(binary: str) -> bool:
-    return shutil.which(binary) is not None
+    if shutil.which(binary) is None:
+        return False
+    # Shims (e.g. pyenv) may exist on PATH but fail at runtime; verify executable.
+    result = subprocess.run([binary, "--version"], capture_output=True)
+    return result.returncode == 0
 
 
 def _fmt(b: float) -> str:
@@ -167,8 +172,6 @@ def _measure_brew() -> int:
             p = Path(raw)
             if p.exists():
                 total += p.stat().st_size if p.is_file() else _du(p)
-    if total == 0:
-        total = _du(HOME / "Library" / "Caches" / "Homebrew")
     return total
 
 
@@ -193,50 +196,83 @@ def _apply_cli(cli: list[str], path: Path) -> int:
     if not _has(binary):
         return 0
     before = _du(path)
-    _run(cli)
+    # Run from HOME so CLIs that require a project context (e.g. bun) don't fail.
+    subprocess.run(cli, capture_output=True, text=True, cwd=str(HOME))
     after = _du(path)
     return max(0, before - after)
 
 
-def _measure_docker() -> int:
+def _parse_docker_size(value: str) -> int:
+    """Parse a docker size string like '1.185GB (100%)' into bytes."""
+    value = re.sub(r"\s*\([^)]*\)\s*$", "", value.strip()).rstrip("B")
+    try:
+        if value.endswith("G"):
+            return int(float(value[:-1]) * 1024 ** 3)
+        if value.endswith("M"):
+            return int(float(value[:-1]) * 1024 ** 2)
+        if value.endswith("K"):
+            return int(float(value[:-1]) * 1024)
+        if value.isdigit():
+            return int(value)
+    except ValueError:
+        pass
+    return 0
+
+
+def _measure_docker(all_images: bool = False) -> int:
+    """Measure reclaimable docker space.
+
+    With all_images=False (level 2): counts dangling images, stopped containers,
+    and build cache — what 'prune -f' actually frees. Tagged unused images are
+    excluded because 'prune -f' never removes them.
+    With all_images=True (level 3): also counts unused tagged images.
+    """
     if not _has("docker"):
         return 0
-    result = _run(["docker", "system", "df", "--format", "{{.Reclaimable}}"])
+    result = _run(["docker", "system", "df", "--format", "{{.Type}}\t{{.Reclaimable}}"])
     if result.returncode != 0:
         return 0
     total = 0
     for line in result.stdout.splitlines():
-        # Reclaimable values look like "1.185GB (100%)" — drop the percentage.
-        line = re.sub(r"\s*\([^)]*\)\s*$", "", line.strip()).rstrip("B")
-        try:
-            if line.endswith("G"):
-                total += int(float(line[:-1]) * 1024 ** 3)
-            elif line.endswith("M"):
-                total += int(float(line[:-1]) * 1024 ** 2)
-            elif line.endswith("K"):
-                total += int(float(line[:-1]) * 1024)
-            elif line.isdigit():
-                total += int(line)
-        except ValueError:
-            pass
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        dtype, reclaimable = parts[0].strip(), parts[1].strip()
+        if dtype == "Local Volumes":
+            continue  # never freed without --volumes
+        if dtype == "Images" and not all_images:
+            # prune -f skips tagged images; count only dangling ones
+            dangling = _run(["docker", "images", "-q", "-f", "dangling=true"])
+            for img_id in dangling.stdout.split():
+                inspect = _run(["docker", "inspect", "--format", "{{.Size}}", img_id])
+                try:
+                    total += int(inspect.stdout.strip())
+                except ValueError:
+                    pass
+            continue
+        total += _parse_docker_size(reclaimable)
     return total
 
 
-def _apply_docker(include_dangerous: bool, yes: bool) -> int:
+def _apply_docker(all_images: bool, include_dangerous: bool, yes: bool) -> int:
     if not _has("docker"):
         return 0
     result = _run(["docker", "info"])
     if result.returncode != 0:
         print("  [SKIP] Docker daemon not running")
         return 0
-    before = _measure_docker()
+    before = _measure_docker(all_images=all_images or include_dangerous)
     if include_dangerous:
         if not yes and not _confirm("  docker system prune -a --volumes — destroys ALL unused images and volumes. Continue?"):
             return 0
         _run(["docker", "system", "prune", "-a", "--volumes", "-f"])
+    elif all_images:
+        if not yes and not _confirm("  docker system prune -a -f — removes ALL unused images (not just dangling). Continue?"):
+            return 0
+        _run(["docker", "system", "prune", "-a", "-f"])
     else:
         _run(["docker", "system", "prune", "-f"])
-    after = _measure_docker()
+    after = _measure_docker(all_images=all_images or include_dangerous)
     return max(0, before - after)
 
 
@@ -430,7 +466,6 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
         ("uv", HOME / ".cache" / "uv", ["uv", "cache", "prune"]),
         ("pip", HOME / "Library" / "Caches" / "pip", [pip_bin, "cache", "purge"]),
         ("npm", HOME / ".npm" / "_cacache", ["npm", "cache", "clean", "--force"]),
-        ("bun", HOME / "Library" / "Caches" / "bun", ["bun", "pm", "cache", "rm"]),
     ]
     for name, path, cli in cli_targets:
         if not active(name, 1):
@@ -445,6 +480,16 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
             freed = _apply_cli(cli, path)
         report.append({"target": name, "level": 1, "reclaimable": size, "freed": freed,
                         "risk": "low", "note": " ".join(cli)})
+
+    if active("bun", 1):
+        # bun pm cache rm requires a project context; delete the cache dir directly.
+        bun_cache = HOME / ".bun" / "install" / "cache"
+        size = _du(bun_cache)
+        freed = 0
+        if not dry_run and size > 0:
+            freed = _delete_dir(bun_cache, dry_run=False)
+        report.append({"target": "bun", "level": 1, "reclaimable": size, "freed": freed,
+                        "risk": "low", "note": "~/.bun/install/cache"})
 
     if active("trash", 1):
         path = HOME / ".Trash"
@@ -517,12 +562,14 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
                         "note": f"sessions older than {args.chats_older_than}d (loses --resume)"})
 
     if active("docker", 2):
-        size = _measure_docker()
+        all_imgs = level >= 3
+        size = _measure_docker(all_images=all_imgs)
         freed = 0
         if not dry_run:
-            freed = _apply_docker(include_dangerous=False, yes=args.yes)
+            freed = _apply_docker(all_images=all_imgs, include_dangerous=False, yes=args.yes)
+        note = ("prune -a -f (no volumes)" if all_imgs else "prune -f (no volumes, not -a)")
         report.append({"target": "docker", "level": 2, "reclaimable": size, "freed": freed,
-                        "risk": "med", "note": "prune -f (no volumes, not -a)"})
+                        "risk": "med", "note": note})
 
     # --- Level 3: aggressive ---
 
@@ -562,10 +609,10 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
     # --- Dangerous ---
 
     if args.include_dangerous and active("docker-volumes", 3):
-        size = _measure_docker()
+        size = _measure_docker(all_images=True)
         freed = 0
         if not dry_run:
-            freed = _apply_docker(include_dangerous=True, yes=args.yes)
+            freed = _apply_docker(all_images=True, include_dangerous=True, yes=args.yes)
         report.append({"target": "docker-volumes", "level": 3, "reclaimable": size, "freed": freed,
                         "risk": "HIGH", "note": "docker system prune -a --volumes — ALL images + volumes"})
 

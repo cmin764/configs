@@ -13,7 +13,7 @@ measurement strategy, apply action, risk, and notes.
 | uv | `~/.cache/uv` | `du -sh` on path | `uv cache prune` | Low |
 | pip | `~/Library/Caches/pip` | `du -sh` on path | `pip cache purge` | Low |
 | npm | `~/.npm/_cacache` | `du -sh` on path | `npm cache clean --force` | Low |
-| bun | `~/Library/Caches/bun` | `du -sh` on path | `bun pm cache rm` | Low |
+| bun | `~/.bun/install/cache` | `du -sh` on path | delete dir directly (`bun pm cache rm` requires a project context) | Low |
 | trash | `~/.Trash` | `du -sh` on path | `rm -rf ~/.Trash/*` | Low |
 | claude-tmp | `/private/tmp/claude-<uid>/` | sum entries older than 24h | delete only entries older than 24h | Low — CC session task/tool buffers; live sessions preserved by the age gate |
 
@@ -28,7 +28,7 @@ measurement strategy, apply action, risk, and notes.
 | logs | `~/Library/Logs` | `du -sh` | delete files older than --stale-days | Low |
 | claude-cache | `~/.claude/shell-snapshots`, `~/.claude/paste-cache`, `~/.claude/cache` | `du -sh` each | delete dirs | Low |
 | claude-chats | `~/.claude/projects/*/<session>.jsonl` + matching session subdir | sum session files with mtime < --chats-older-than | delete session files and their subdirs | Low-med — loses --resume for old sessions; memory never touched |
-| docker | daemon socket | `docker system df` (RECLAIMABLE column) | `docker system prune -f` (no -a, no --volumes) | Med — removes dangling images, stopped containers, build cache |
+| docker | daemon socket | dangling images + stopped containers + build cache (tagged images excluded) | `docker system prune -f` (no -a, no --volumes) | Med — removes dangling images, stopped containers, build cache; tagged images untouched |
 
 ### Claude chat pruning detail
 
@@ -47,6 +47,7 @@ themselves, the `memory/` dirs, and tool configs are never touched.
 | node_modules | top-level `<work-dir>/**/node_modules` (depth ≤ 4, never nested) | `du -sh` per dir; filter by project last-touched mtime | delete `node_modules/` dir only (never the project root) | Med — `npm/bun install` needed before next run |
 | xcode | `~/Library/Developer/Xcode/DerivedData`, `~/Library/Developer/Xcode/Archives`, `~/Library/Developer/CoreSimulator/Devices` | `du -sh` each | confirm prompt, then delete DerivedData/Archives; simulators via `xcrun simctl delete unavailable` | Med — Xcode rebuilds; only orphaned simulators removed |
 | brew-prune-all | `~/Library/Caches/Homebrew` | `brew cleanup -n --prune=all` | `brew cleanup -s --prune=all` | Med — removes all cached bottles, not just expired |
+| docker (at level 3) | daemon socket | `docker system df` Images RECLAIMABLE | `docker system prune -a -f` (no --volumes) — requires confirm | Med-high — removes ALL unused images including tagged ones; re-pull needed |
 
 ### node_modules safety constraints
 
@@ -98,6 +99,7 @@ allowlist raises an error and skips the target:
 ~/Library/Caches/
 ~/.cache/
 ~/.npm/
+~/.bun/install/cache/
 ~/.Trash/
 ~/.claude/projects/
 ~/.claude/shell-snapshots

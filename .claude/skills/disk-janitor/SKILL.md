@@ -42,8 +42,8 @@ dry-run gives the fullest picture without touching anything.
 | Level | What it covers | Risk |
 |-------|---------------|------|
 | 1 (default) | Package-manager caches via official CLIs: brew, uv, pip, npm, bun | Low |
-| 2 | + Chrome/JetBrains/IDE caches, ~/Library/Logs, Claude shell/paste cache, Claude chats older than N days, docker prune (no volumes) | Low-med |
-| 3 | + Stale node_modules (projects untouched > N days), Xcode artifacts, brew --prune=all | Med (rebuild cost) |
+| 2 | + Chrome/JetBrains/IDE caches, ~/Library/Logs, Claude shell/paste cache, Claude chats older than N days, docker prune -f (dangling images + build cache only, tagged images untouched) | Low-med |
+| 3 | + Stale node_modules (projects untouched > N days), Xcode artifacts, brew --prune=all, docker prune -a (ALL unused images, confirm required) | Med (rebuild cost) |
 | dangerous | docker system prune -a --volumes — double-gated: needs --include-dangerous + explicit confirm | High |
 
 Levels are cumulative. `--apply` alone runs level 1 only; you must pass
