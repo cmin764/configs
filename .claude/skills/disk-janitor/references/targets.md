@@ -15,6 +15,7 @@ measurement strategy, apply action, risk, and notes.
 | npm | `~/.npm/_cacache` | `du -sh` on path | `npm cache clean --force` | Low |
 | bun | `~/Library/Caches/bun` | `du -sh` on path | `bun pm cache rm` | Low |
 | trash | `~/.Trash` | `du -sh` on path | `rm -rf ~/.Trash/*` | Low |
+| claude-tmp | `/private/tmp/claude-<uid>/` | `du -sh` on path | delete dir | Low — CC session task/tool buffers; only clean when Claude Code is not running |
 
 ---
 
@@ -89,6 +90,7 @@ Deletes are only permitted inside these roots. Any resolved path outside the
 allowlist raises an error and skips the target:
 
 ```
+/private/tmp/claude-<uid>/  (or /tmp/claude-<uid>/ on Linux)
 ~/Library/Caches/
 ~/.cache/
 ~/.npm/

@@ -22,6 +22,8 @@ import time
 from pathlib import Path
 
 HOME = Path.home()
+_TMP_DIR = Path("/private/tmp") if Path("/private/tmp").exists() else Path("/tmp")
+_CLAUDE_TMP = _TMP_DIR / f"claude-{os.getuid()}"
 
 # Common project directory names to probe when --work-dir is not specified.
 _WORK_DIR_CANDIDATES = ["Work", "Projects", "projects", "dev", "code", "src", "repos"]
@@ -35,6 +37,7 @@ def _detect_work_dirs() -> list[Path]:
 # Paths outside this allowlist are never deleted, even if a target resolves there.
 # Work dirs are added dynamically once args are parsed (see _build_allowlist).
 _ALLOWLIST_BASE = [
+    _CLAUDE_TMP,
     HOME / "Library" / "Caches",
     HOME / ".cache",
     HOME / ".npm",
@@ -366,6 +369,15 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
             freed = _delete_dir(path, dry_run=False)
         report.append({"target": "trash", "level": 1, "reclaimable": size, "freed": freed,
                         "risk": "low", "note": "~/.Trash"})
+
+    if active("claude-tmp", 1):
+        size = _du(_CLAUDE_TMP)
+        freed = 0
+        if not dry_run and size > 0:
+            freed = _delete_dir(_CLAUDE_TMP, dry_run=False)
+        report.append({"target": "claude-tmp", "level": 1, "reclaimable": size, "freed": freed,
+                        "risk": "low",
+                        "note": f"{_CLAUDE_TMP} (session task/tool buffers; safe when CC is not running)"})
 
     # --- Level 2: app caches + logs + Claude ---
 
