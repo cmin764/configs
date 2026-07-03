@@ -18,8 +18,9 @@ everything shareable; a couple of files intentionally diverge on each machine
 | `.gitconfig` | `~/.gitconfig` | Identity plus `gh` as the GitHub credential helper |
 | `.gitignore_global` | `~/.gitignore_global` | Global ignores: JetBrains metadata, Copilot sessions, Claude Code worktrees and local settings |
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | Coding standards, communication style, git and tooling rules for every Claude Code session |
-| `.claude/settings.json` | `~/.claude/settings.json` | Claude Code harness config: permission allowlist, RTK PreToolUse hook, plugins, env |
+| `.claude/settings.json` | `~/.claude/settings.json` | Claude Code harness config: permission allowlist, RTK PreToolUse hook, claude-mem pid guard hooks, plugins, env |
 | `.claude/RTK.md` | `~/.claude/RTK.md` | RTK (token-optimizing CLI proxy) usage guide, referenced by CLAUDE.md |
+| `.claude/hooks/` | `~/.claude/hooks/` | Standalone hook scripts referenced from settings.json (currently: claude-mem stale-pid cleanup) |
 | `.claude/skills/` | `~/.claude/skills/` | Reusable Claude Code skills, see below |
 | `claude-style.txt` | n/a | "Live Edge" writing voice guide, source material for the style rules in CLAUDE.md |
 | `cursor-settings.json` | Cursor settings | Cursor IDE preferences |
@@ -92,7 +93,7 @@ Excalidraw: import `system-design.excalidrawlib` through the library sidebar.
 There's no sync script. The model is deliberate copies in both directions:
 
 - **Must stay identical** between repo and home: `.zshrc`, `.vimrc`,
-  `.gitconfig`, `.gitignore_global`, `CLAUDE.md`, `RTK.md`, `skills/`.
+  `.gitconfig`, `.gitignore_global`, `CLAUDE.md`, `RTK.md`, `skills/`, `hooks/`.
 - **Intentionally diverge** per machine:
   - `~/.zprofile` carries real secrets; the repo copy keeps the section as
     commented placeholders. Sync everything above the secrets divider.
@@ -111,6 +112,7 @@ for f in .zshrc .zprofile .vimrc .gitconfig .gitignore_global; do
 done
 diff ~/.claude/settings.json .claude/settings.json
 diff -r ~/.claude/skills .claude/skills
+diff -r ~/.claude/hooks .claude/hooks
 ```
 
 Anything that drifted: copy it in, review with `git diff`, commit. Same flow in
