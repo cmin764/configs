@@ -93,11 +93,24 @@
   },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
-    "claude-mem@thedotmack": true
+    "claude-mem@thedotmack": true,
+    "ponytail@ponytail": true
   },
+  "extraKnownMarketplaces": {
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    }
+  },
+  "model": "sonnet",
   "effortLevel": "medium",
+  "tui": "fullscreen",
   "autoDreamEnabled": true,
-  "theme": "light",
+  "theme": "auto",
   "preferredNotifChannel": "notifications_disabled",
-  "agentPushNotifEnabled": false
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": false,
+  "skipAutoPermissionPrompt": true
 }
