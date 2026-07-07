@@ -84,4 +84,4 @@ Directness serves clarity, not ego.
 
 - Never read or transmit unencrypted secrets outside this machine.
 
-@RTK.md
+@~/.claude/RTK.md

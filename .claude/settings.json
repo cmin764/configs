@@ -110,7 +110,7 @@
   "autoDreamEnabled": true,
   "theme": "auto",
   "preferredNotifChannel": "notifications_disabled",
-  "remoteControlAtStartup": true,
+  "remoteControlAtStartup": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true
 }
