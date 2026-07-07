@@ -4,9 +4,12 @@ Personal Mac bootstrap repo. Clone it on a clean machine, copy the configs into
 place, and you get a working shell, git, and Claude Code setup in minutes instead
 of an afternoon of re-configuring everything from memory.
 
-Files are plain copies, not symlinks. The repo is the source of truth for
+Most files are plain copies, not symlinks. The repo is the source of truth for
 everything shareable; a couple of files intentionally diverge on each machine
-(secrets, machine-local permissions). See [Keeping things in sync](#keeping-things-in-sync).
+(secrets, machine-local permissions). `CLAUDE.md` and `RTK.md` are the
+exception: they're symlinked from `~/.claude/` straight into this repo, since
+they're the two files edited most often and a copy would drift silently. See
+[Keeping things in sync](#keeping-things-in-sync).
 
 ## What's inside
 
@@ -17,9 +20,9 @@ everything shareable; a couple of files intentionally diverge on each machine
 | `.vimrc` | `~/.vimrc` | Minimal vim: line numbers, search highlight, 4-space tabs, no swap files |
 | `.gitconfig` | `~/.gitconfig` | Identity plus `gh` as the GitHub credential helper |
 | `.gitignore_global` | `~/.gitignore_global` | Global ignores: JetBrains metadata, Copilot sessions, Claude Code worktrees and local settings |
-| `CLAUDE.md` | `~/.claude/CLAUDE.md` | Coding standards, communication style, git and tooling rules for every Claude Code session |
+| `.claude/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlink) | Coding standards, communication style, git and tooling rules for every Claude Code session |
 | `.claude/settings.json` | `~/.claude/settings.json` | Claude Code harness config: permission allowlist, RTK PreToolUse hook, claude-mem pid guard hooks, plugins, env |
-| `.claude/RTK.md` | `~/.claude/RTK.md` | RTK (token-optimizing CLI proxy) usage guide, referenced by CLAUDE.md |
+| `.claude/RTK.md` | `~/.claude/RTK.md` (symlink) | RTK (token-optimizing CLI proxy) usage guide, referenced by CLAUDE.md |
 | `.claude/hooks/` | `~/.claude/hooks/` | Standalone hook scripts referenced from settings.json (currently: claude-mem stale-pid cleanup) |
 | `.claude/skills/` | `~/.claude/skills/` | Reusable Claude Code skills, see below |
 | `claude-style.txt` | n/a | "Live Edge" writing voice guide, source material for the style rules in CLAUDE.md |
@@ -65,7 +68,9 @@ adding new skills, and packaging skills as `.skill` files for Claude Chat.
 
    cp .zprofile .zshrc .vimrc .gitconfig .gitignore_global ~/
    mkdir -p ~/.claude
-   cp CLAUDE.md .claude/settings.json .claude/RTK.md ~/.claude/
+   cp .claude/settings.json ~/.claude/
+   ln -s "$PWD/.claude/CLAUDE.md" ~/.claude/CLAUDE.md
+   ln -s "$PWD/.claude/RTK.md" ~/.claude/RTK.md
    cp -R .claude/skills ~/.claude/skills
    ```
 
@@ -76,8 +81,9 @@ adding new skills, and packaging skills as `.skill` files for Claude Chat.
    ```
 
 4. **Initialize RTK once.** On a brand-new machine run `rtk init -g` to install
-   the global hook. Never re-run it on a machine that's already set up: it
-   overwrites the customized `~/.claude/RTK.md` (see that file for details).
+   the global hook. Never re-run it on a machine that's already set up: since
+   `~/.claude/RTK.md` is a symlink, `rtk init -g` would overwrite the repo's
+   copy through it (see that file for details).
 
 5. **Re-add secrets.** Open `~/.zprofile` and fill in the tokens section at the
    bottom (`GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, ...). These never go in the repo.
@@ -90,10 +96,13 @@ Excalidraw: import `system-design.excalidrawlib` through the library sidebar.
 
 ## Keeping things in sync
 
-There's no sync script. The model is deliberate copies in both directions:
+There's no sync script for most files; the model is deliberate copies in both
+directions. `CLAUDE.md` and `RTK.md` are symlinked instead, so there's nothing
+to sync for them, editing either path edits the one file.
 
-- **Must stay identical** between repo and home: `.zshrc`, `.vimrc`,
-  `.gitconfig`, `.gitignore_global`, `CLAUDE.md`, `RTK.md`, `skills/`, `hooks/`.
+- **Symlinked, single source of truth**: `CLAUDE.md`, `RTK.md`.
+- **Must stay identical** between repo and home (plain copies): `.zshrc`,
+  `.vimrc`, `.gitconfig`, `.gitignore_global`, `skills/`, `hooks/`.
 - **Intentionally diverge** per machine:
   - `~/.zprofile` carries real secrets; the repo copy keeps the section as
     commented placeholders. Sync everything above the secrets divider.
