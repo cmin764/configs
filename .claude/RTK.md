@@ -79,3 +79,19 @@ gh pr diff -- path/to/file.ts      # full diff for one file only when needed
 ## Name Collision Warning
 
 If `rtk gain` fails, you may have `reachingforthejack/rtk` (Rust Type Kit) installed instead of this tool.
+
+## Known Bug — `git log` After a Merge
+
+Confirmed (v0.37.2): `rtk git log` / `rtk git log --graph` — even `rtk git log HEAD -N` — can drop
+the merge commit entirely right after a merge and show a non-ancestor commit as if it were HEAD.
+`rtk git status` is unaffected; this is specific to `log`. No fix available: this is a closed-source
+binary with no discoverable update channel (not on Homebrew/npm/cargo, no `update`/`self-update`
+subcommand).
+
+**Workaround:** after any merge or rebase, don't trust `rtk git log` output at face value. Bypass
+the hook and check directly:
+```bash
+/usr/bin/git log --oneline --graph -10
+```
+Do this whenever history looks suspicious right after a merge (missing commits, wrong parent count,
+a graph that doesn't match what a preceding command reported).
