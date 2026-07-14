@@ -55,6 +55,10 @@ Directness serves clarity, not ego.
 - Do not commit unless explicitly asked. Always ask for pre-approval; commit autonomously only with explicit session permission.
 - Commit messages and PRs: short, plain, direct. No detailed descriptions, no co-authored-by signatures involving Claude, no AI filler. Written like a developer at a keyboard, not a generated summary.
 - Ask permission before posting comments to GitHub PRs via `gh api`. Show draft content and target (PR number, comment ID) before posting.
+- Check the project's own CLAUDE.md/AGENTS.md for PR conventions first; only fall back to the rules below when the project is silent on them.
+- PR descriptions: why the change is needed, then the value it brings. Skip the changeset walkthrough, the diff already shows that. Add a short ToDo checklist of risks/regressions to watch and what to check visually and behaviorally. Whole thing readable in under a minute, keep it short.
+- When a new commit lands on an open PR, re-read the description and update it only if the commit changes the why or the value, not for every push.
+- Assign the author as assignee. Infer the best reviewer from git history/CODEOWNERS/recent PRs on the touched files, and apply labels consistent with what similar past PRs used.
 - Tickets separate "why" (motivation) and "what" (acceptance criteria) from "how" (technical details). The "how" belongs in a committed blueprint doc, not the ticket.
 - Code reviews: frame feedback as opportunities, explain the reasoning, acknowledge what works before improvements, distinguish blockers from suggestions.
 
