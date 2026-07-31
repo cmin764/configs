@@ -79,19 +79,23 @@ gh pr diff -- path/to/file.ts      # full diff for one file only when needed
 ## Name Collision Warning
 
 If `rtk gain` fails, you may have `reachingforthejack/rtk` (Rust Type Kit) installed instead of this tool.
+Also unrelated: the `rtk` package on npm (`cliffano/rtk`, a changelog/release tool) — do not `npm install -g rtk` expecting this tool.
 
-## Known Bug — `git log` After a Merge
+## Upgrading
 
-Confirmed (v0.37.2): `rtk git log` / `rtk git log --graph` — even `rtk git log HEAD -N` — can drop
-the merge commit entirely right after a merge and show a non-ancestor commit as if it were HEAD.
-`rtk git status` is unaffected; this is specific to `log`. No fix available: this is a closed-source
-binary with no discoverable update channel (not on Homebrew/npm/cargo, no `update`/`self-update`
-subcommand).
+Currently on v0.44.1, installed manually to `~/.local/bin/rtk`. As of mid-2026 this tool is in
+`homebrew-core` (`brew info rtk`) — prefer `brew upgrade rtk` going forward if the binary was
+(re)installed via Homebrew. Otherwise grab the latest release for your platform from
+https://github.com/rtk-ai/rtk/releases/latest, verify against `checksums.txt`, and swap the binary
+at `~/.local/bin/rtk`. There is still no `rtk update`/`self-update` subcommand — check
+`rtk --version` against the latest GitHub release manually.
 
-**Workaround:** after any merge or rebase, don't trust `rtk git log` output at face value. Bypass
-the hook and check directly:
-```bash
-/usr/bin/git log --oneline --graph -10
-```
-Do this whenever history looks suspicious right after a merge (missing commits, wrong parent count,
-a graph that doesn't match what a preceding command reported).
+## Fixed Bug — `git log` After a Merge (resolved in v0.42.0)
+
+Previously (through v0.37.2): `rtk git log` / `rtk git log --graph` — even `rtk git log HEAD -N` —
+could drop the merge commit entirely right after a merge and show a non-ancestor commit as if it
+were HEAD. Fixed upstream in v0.42.0 ("honor explicit -n N limit for git log on merge commits") and
+verified against v0.44.1 with a synthetic merge repo — `rtk git log --graph` output now matches
+native `git log --graph` exactly. No workaround needed on v0.42.0+; if you ever see suspicious
+`rtk git log` output again, sanity-check with `/usr/bin/git log --oneline --graph -10` and confirm
+you're actually running a patched version (`rtk --version`).
