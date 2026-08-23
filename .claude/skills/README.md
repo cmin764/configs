@@ -24,6 +24,7 @@ No config required. Clone the repo, open Claude Code, done.
 
 | Skill | What it does |
 |-------|-------------|
+| [config-sync](./config-sync/) | Syncs this repo's hand-edited config with the live machine (status/restore/push/pull) and walks a fresh Mac through restoring it |
 | [disk-janitor](./disk-janitor/) | Detects reclaimable disk space on macOS and cleans it via a tiered Python script (dry-run by default, progressive aggressiveness levels) |
 | [frontend-review](./frontend-review/) | Stack-aware pre-merge review for any React/Next.js project: detects the stack, applies a unified a11y/SEO/security/perf/TS/Tailwind checklist, fixes criticals (tiered via `--fix`) |
 | [job-fit-assessor](./job-fit-assessor/) | Assesses a candidate profile against any JD, producing a scored, filterable React artifact with per-requirement annotations |
