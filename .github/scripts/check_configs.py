@@ -133,9 +133,11 @@ def check_shell_syntax(files, findings):
 
 def check_binary(files, findings):
     for path in files:
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        if "reference/" in rel:
+            continue  # curated binary assets belong here, see check_junk
         if read_text(path) is None:
-            findings.append(f"{path.relative_to(REPO_ROOT)}: not valid UTF-8 "
-                             f"(looks like a committed binary)")
+            findings.append(f"{rel}: not valid UTF-8 (looks like a committed binary)")
 
 
 def check_machine_paths(files, findings):

@@ -72,11 +72,15 @@ ITERM2_PROFILE_GUID = "D3F7A1B2-3C4D-4E5F-8A9B-0C1D2E3F4A5B"
 
 def deep_merge(dest, src):
     """Recursively merge src into dest; src wins on conflicts, dest-only
-    keys survive. Neither input is mutated."""
+    keys survive. Lists are unioned (dest first, then new src entries) so
+    accumulated live-only entries (e.g. permission grants) aren't dropped.
+    Neither input is mutated."""
     result = dict(dest)
     for key, value in src.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = deep_merge(result[key], value)
+        elif key in result and isinstance(result[key], list) and isinstance(value, list):
+            result[key] = result[key] + [v for v in value if v not in result[key]]
         else:
             result[key] = value
     return result
@@ -97,12 +101,15 @@ def diff_paths(dest, src, prefix=""):
 
 
 def _selftest():
-    base = {"a": 1, "b": {"c": 2, "d": 3}}
-    override = {"b": {"c": 99}, "e": 5}
+    base = {"a": 1, "b": {"c": 2, "d": 3}, "grants": ["live-only"]}
+    override = {"b": {"c": 99}, "e": 5, "grants": ["template", "live-only"]}
     merged = deep_merge(base, override)
-    assert merged == {"a": 1, "b": {"c": 99, "d": 3}, "e": 5}, merged
-    assert base == {"a": 1, "b": {"c": 2, "d": 3}}, "deep_merge mutated dest"
-    assert override == {"b": {"c": 99}, "e": 5}, "deep_merge mutated src"
+    assert merged == {"a": 1, "b": {"c": 99, "d": 3}, "e": 5,
+                       "grants": ["live-only", "template"]}, merged
+    assert base == {"a": 1, "b": {"c": 2, "d": 3}, "grants": ["live-only"]}, \
+        "deep_merge mutated dest"
+    assert override == {"b": {"c": 99}, "e": 5, "grants": ["template", "live-only"]}, \
+        "deep_merge mutated src"
     assert diff_paths({"a": 1}, {"a": 1}) == []
     assert diff_paths({"a": 1}, {"a": 2}) == ["a: differs"]
     print("selftest ok")
@@ -254,7 +261,8 @@ def sync_iterm2(mode):
         if not profiles:
             print("  skip iterm2: no profiles in the local plist")
             return
-        profile = dict(profiles[0])
+        profile = next((p for p in profiles if p.get("Name") == "Driftware"), profiles[0])
+        profile = dict(profile)
         profile["Guid"] = ITERM2_PROFILE_GUID
         if profile.get("Working Directory", "").startswith(str(HOME)):
             profile["Working Directory"] = "$HOME"

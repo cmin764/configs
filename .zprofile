@@ -43,7 +43,7 @@ export ENABLE_EXPERIMENTAL_MCP_CLI=true
 # Real values live in ~/.zprofile.local (chmod 600, never committed).
 # Fill these in on a new machine:
 #   export GITHUB_TOKEN=""        # gh CLI + Cursor github MCP
-#   export OPENAI_API_KEY=""      # Change Agents
+#   export OPENAI_API_KEY=""
 #   export GEMINI_API_KEY=""
 #   export GOOGLE_MAPS_API_KEY=""
 #   export TALLY_API_KEY=""
