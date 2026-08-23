@@ -91,3 +91,6 @@ http-client.private.env.json
 
 .claude/worktrees/
 .claude/settings.local.json
+
+# Mac junk
+.DS_Store

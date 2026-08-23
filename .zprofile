@@ -1,9 +1,12 @@
 # Local binaries (takes priority over brew and everything else)
 export PATH="$HOME/.local/bin:$PATH"
+export PATH="/usr/local/sbin:$PATH"
 
-# Homebrew
+# Homebrew (Apple Silicon /opt/homebrew or Intel /usr/local, whichever exists)
 if [[ -x /opt/homebrew/bin/brew ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
 fi
 
 # Java
@@ -35,7 +38,14 @@ path+=("$HOME/Library/Application Support/JetBrains/Toolbox/scripts")
 export ENABLE_EXPERIMENTAL_MCP_CLI=true
 
 # ── Tokens & secrets ─────────────────────────────────────────────
-# Add API keys and tokens below. Keep this section at the bottom
-# so it's easy to find and audit. Never commit these values.
-# export GITHUB_TOKEN=""
-# export ANTHROPIC_API_KEY=""
+# Real values live in ~/.zprofile.local (chmod 600, never committed).
+# Fill these in on a new machine:
+#   export GITHUB_TOKEN=""        # gh CLI + Cursor github MCP
+#   export OPENAI_API_KEY=""      # Change Agents
+#   export GEMINI_API_KEY=""
+#   export GOOGLE_MAPS_API_KEY=""
+#   export TALLY_API_KEY=""
+#   export CAL_API_KEY=""
+# ponytail: a plaintext file is the floor. Move to `op run` / 1Password
+# CLI if these ever get shared or start rotating on a schedule.
+[ -f "$HOME/.zprofile.local" ] && source "$HOME/.zprofile.local"

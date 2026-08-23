@@ -1,5 +1,7 @@
 {
     "window.commandCenter": true,
+    // Stop composer from waiting mid-response for another message
+    "cursor.composer.queueMessageDefaultBehavior": "stop-and-send",
     // Theme follows system's
     "workbench.colorTheme": "Cursor Light",
     "window.autoDetectColorScheme": true,

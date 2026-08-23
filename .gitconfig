@@ -4,10 +4,16 @@
 	name = Cosmin Poieana
 	email = cmin764@gmail.com
 [credential "https://github.com"]
-	helper = 
-	helper = !/usr/local/bin/gh auth git-credential
+	helper =
+	helper = !gh auth git-credential
 [credential "https://gist.github.com"]
-	helper = 
-	helper = !/usr/local/bin/gh auth git-credential
+	helper =
+	helper = !gh auth git-credential
 [core]
-	excludesfile = /Users/cmin/.gitignore_global
+	excludesfile = ~/.gitignore_global
+
+# Machine-local overrides (per-client email includeIf blocks, etc).
+# Git silently skips this line if the file doesn't exist, so it's safe
+# to commit unconditionally. See .gitconfig-local.example.
+[include]
+	path = ~/.gitconfig.local

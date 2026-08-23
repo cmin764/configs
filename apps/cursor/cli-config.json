@@ -1,0 +1,42 @@
+{
+  "permissions": { "allow": ["Shell(ls)"], "deny": [] },
+  "editor": { "vimMode": false },
+  "display": {
+    "showLineNumbers": false,
+    "showThinkingBlocks": false,
+    "showStatusIndicators": false,
+    "showStatusLineRunningTime": false,
+    "mode": "zen"
+  },
+  "notifications": true,
+  "hints": true,
+  "model": {
+    "modelId": "gpt-5.6-sol",
+    "displayModelId": "gpt-5.6-sol",
+    "displayName": "GPT-5.6 Sol 272K Medium",
+    "displayNameShort": "GPT-5.6 Sol 272K Medium",
+    "aliases": [],
+    "maxMode": false
+  },
+  "maxMode": false,
+  "maxModeAutoEnabled": false,
+  "modelParameters": {
+    "auto-smart": [{ "id": "optimize_for", "value": "balanced" }],
+    "gpt-5.6-sol": [
+      { "id": "context", "value": "272k" },
+      { "id": "reasoning", "value": "medium" },
+      { "id": "fast", "value": "false" }
+    ]
+  },
+  "selectedModel": {
+    "modelId": "gpt-5.6-sol",
+    "parameters": [
+      { "id": "context", "value": "272k" },
+      { "id": "reasoning", "value": "medium" },
+      { "id": "fast", "value": "false" }
+    ]
+  },
+  "approvalMode": "allowlist",
+  "sandbox": { "mode": "disabled", "networkAccess": "user_config_with_defaults" },
+  "attribution": { "attributeCommitsToAgent": true, "attributePRsToAgent": true }
+}
