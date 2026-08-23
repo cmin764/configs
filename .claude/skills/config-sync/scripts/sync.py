@@ -36,6 +36,9 @@ SYMLINKS = [
     (".claude/skills", "~/.claude/skills"),
 ]
 
+ITERM2_DST_REL = "apps/iterm2/Driftware.json"
+ITERM2_DST = "~/Library/Application Support/iTerm2/DynamicProfiles/Driftware.json"
+
 # Files the owning app rewrites, so a plain copy in the direction it's used.
 COPIES = [
     ("apps/cursor/settings.json",
@@ -45,12 +48,12 @@ COPIES = [
      "~/Library/Application Support/Sublime Text/Packages/User/"
      "Preferences.sublime-settings"),
     ("apps/docker/daemon.json", "~/.docker/daemon.json"),
-    ("apps/iterm2/Driftware.json",
-     "~/Library/Application Support/iTerm2/DynamicProfiles/Driftware.json"),
+    (ITERM2_DST_REL, ITERM2_DST),
 ]
 
-# Same as COPIES, but the live file carries fields that must never reach
-# the repo (auth identity, caches). Pull drops them; push writes as-is.
+# Same shape as the app-rewritten list above, but the live file carries
+# fields that must never reach a public repo (auth identity, caches).
+# Pull drops them; push writes as-is.
 TRIMMED_COPIES = [
     ("apps/cursor/cli-config.json", "~/.cursor/cli-config.json",
      {"authInfo", "privacyCache", "autoReviewAvailabilityCache",
@@ -238,18 +241,15 @@ def sync_merge(src_rel, dst_rel, mode):
 
 
 def sync_iterm2(mode):
-    dst_rel = "apps/iterm2/Driftware.json"
     if mode == "status":
-        if ITERM2_PLIST.exists():
-            print(f"[source found] {dst_rel} (re-export with --pull to refresh)")
-        else:
-            print(f"[no iterm2]    {dst_rel} (plist not found on this machine)")
+        sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
         return
     if mode == "pull":
         if not ITERM2_PLIST.exists():
             print("  skip iterm2: no local iTerm2 preferences to export from")
             return
-        d = plistlib.load(open(ITERM2_PLIST, "rb"))
+        with open(ITERM2_PLIST, "rb") as f:
+            d = plistlib.load(f)
         profiles = d.get("New Bookmarks", [])
         if not profiles:
             print("  skip iterm2: no profiles in the local plist")
@@ -258,13 +258,11 @@ def sync_iterm2(mode):
         profile["Guid"] = ITERM2_PROFILE_GUID
         if profile.get("Working Directory", "").startswith(str(HOME)):
             profile["Working Directory"] = "$HOME"
-        out_path = repo_path(dst_rel)
+        out_path = repo_path(ITERM2_DST_REL)
         out_path.write_text(json.dumps({"Profiles": [profile]}, indent=2, default=str))
-        print(f"  pulled iTerm2 profile '{profile.get('Name')}' -> {dst_rel}")
+        print(f"  pulled iTerm2 profile '{profile.get('Name')}' -> {ITERM2_DST_REL}")
     elif mode in ("restore", "push"):
-        sync_copy(dst_rel,
-                  "~/Library/Application Support/iTerm2/DynamicProfiles/Driftware.json",
-                  mode)
+        sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
 
 
 def run(mode):
@@ -272,7 +270,7 @@ def run(mode):
     for src, dst in SYMLINKS:
         sync_symlink(src, dst, mode)
     for src, dst in COPIES:
-        if src == "apps/iterm2/Driftware.json":
+        if src == ITERM2_DST_REL:
             continue  # handled by sync_iterm2, which also re-exports on pull
         sync_copy(src, dst, mode)
     sync_iterm2(mode)

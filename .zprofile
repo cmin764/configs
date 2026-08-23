@@ -1,6 +1,8 @@
-# Local binaries (takes priority over brew and everything else)
-export PATH="$HOME/.local/bin:$PATH"
+# Local binaries.
+# ~/.local/bin exported last so it wins over /usr/local/sbin on name clashes
+# (Homebrew's shellenv below still prepends ahead of both).
 export PATH="/usr/local/sbin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 # Homebrew (Apple Silicon /opt/homebrew or Intel /usr/local, whichever exists)
 if [[ -x /opt/homebrew/bin/brew ]]; then
