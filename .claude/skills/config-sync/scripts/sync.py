@@ -256,6 +256,8 @@ def sync_iterm2(mode):
             return
         profile = dict(profiles[0])
         profile["Guid"] = ITERM2_PROFILE_GUID
+        if profile.get("Working Directory", "").startswith(str(HOME)):
+            profile["Working Directory"] = "$HOME"
         out_path = repo_path(dst_rel)
         out_path.write_text(json.dumps({"Profiles": [profile]}, indent=2, default=str))
         print(f"  pulled iTerm2 profile '{profile.get('Name')}' -> {dst_rel}")

@@ -1,0 +1,21 @@
+name: config checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  deterministic-checks:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run selftest (verify the checker itself works)
+        run: python3 .github/scripts/check_configs.py --selftest
+
+      - name: Secrets, JSON/shell validity, machine-specific paths, junk files
+        run: python3 .github/scripts/check_configs.py
+
+      - name: config-sync selftest (deep_merge / diff_paths logic)
+        run: python3 .claude/skills/config-sync/scripts/sync.py --selftest

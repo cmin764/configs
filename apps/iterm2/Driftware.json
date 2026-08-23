@@ -417,7 +417,7 @@
       },
       "Use Cursor Guide (Light)": false,
       "Custom Directory": "Recycle",
-      "Working Directory": "/Users/cmin",
+      "Working Directory": "$HOME",
       "ASCII Anti Aliased": true,
       "Shortcut": "",
       "Mouse Reporting": true,
