@@ -1,0 +1,14 @@
+# Machine-local git overrides, e.g. a per-client commit email.
+#
+# .gitconfig includes ~/.gitconfig.local unconditionally (git silently skips
+# a missing include path), so this file never needs to be committed or
+# genericized. Copy it there and fill in real directories/emails:
+#
+#   cp .gitconfig-local.example ~/.gitconfig.local
+#
+[includeIf "gitdir:~/Work/some-client/**"]
+	path = ~/.gitconfig-some-client
+#
+# ~/.gitconfig-some-client then holds just:
+#   [user]
+#       email = you@some-client.example

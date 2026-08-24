@@ -1,140 +1,66 @@
 # configs
 
-Personal Mac bootstrap repo. Clone it on a clean machine, copy the configs into
-place, and you get a working shell, git, and Claude Code setup in minutes instead
-of an afternoon of re-configuring everything from memory.
+Personal Mac bootstrap repo, public on GitHub. Clone it on a clean machine,
+run one script, and you get a working shell, git, Claude Code, and app setup
+back instead of an afternoon of reconstructing it from memory.
 
-Most files are plain copies, not symlinks. The repo is the source of truth for
-everything shareable; a couple of files intentionally diverge on each machine
-(secrets, machine-local permissions). `CLAUDE.md` and `RTK.md` are the
-exception: they're symlinked from `~/.claude/` straight into this repo, since
-they're the two files edited most often and a copy would drift silently. See
-[Keeping things in sync](#keeping-things-in-sync).
+**Scope rule**: only configuration a human deliberately edited goes in here.
+Anything a tool accumulated on its own -- installed packages, browser
+extensions, plugin manifests -- gets regenerated on the new machine instead of
+committed. `brew bundle dump`, `cursor --list-extensions`, and similar exist
+for exactly that; duplicating their output here would just be one more place
+for it to go stale.
+
+## Quick start on a new Mac
+
+```bash
+# Prerequisites: Homebrew, then gh (git credential helper), Claude Code, rtk
+brew install gh rtk
+gh auth login
+
+git clone git@github.com:cmin764/configs.git ~/Work/cmin764/configs
+cd ~/Work/cmin764/configs
+python3 .claude/skills/config-sync/scripts/sync.py --restore
+```
+
+Then fill in `~/.zprofile.local` with real API keys (the six names are
+commented in `.zprofile`) and, if this machine does client work under a
+different git email, `cp .gitconfig-local.example ~/.gitconfig.local` and fill
+that in too. Full restore order, including iTerm2 and the one MCP server:
+`.claude/skills/config-sync/SKILL.md`, or just ask Claude Code to run
+`/config-sync` once it's installed.
 
 ## What's inside
 
-| File / dir | Goes to | What it is |
+| Path | Installs to | What it is |
 |---|---|---|
-| `.zprofile` | `~/.zprofile` | PATH and env setup: Homebrew, Java, Go, pyenv, Bun, NVM, JetBrains Toolbox. Secrets section at the bottom stays local-only |
-| `.zshrc` | `~/.zshrc` | Aliases, daily-cached completions, pyenv/NVM/Bun shell integration, Claude Code auto-updater off |
-| `.vimrc` | `~/.vimrc` | Minimal vim: line numbers, search highlight, 4-space tabs, no swap files |
-| `.gitconfig` | `~/.gitconfig` | Identity plus `gh` as the GitHub credential helper |
-| `.gitignore_global` | `~/.gitignore_global` | Global ignores: JetBrains metadata, Copilot sessions, Claude Code worktrees and local settings |
-| `.claude/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlink) | Coding standards, communication style, git and tooling rules for every Claude Code session |
-| `.claude/settings.json` | `~/.claude/settings.json` | Claude Code harness config: permission allowlist, RTK PreToolUse hook, claude-mem pid guard hooks, plugins, env |
-| `.claude/RTK.md` | `~/.claude/RTK.md` (symlink) | RTK (token-optimizing CLI proxy) usage guide, referenced by CLAUDE.md |
-| `.claude/hooks/` | `~/.claude/hooks/` | Standalone hook scripts referenced from settings.json (currently: claude-mem stale-pid cleanup) |
-| `.claude/skills/` | `~/.claude/skills/` | Reusable Claude Code skills, see below |
-| `claude-style.txt` | n/a | "Live Edge" writing voice guide, source material for the style rules in CLAUDE.md |
-| `cursor-settings.json` | Cursor settings | Cursor IDE preferences |
-| `system-design.excalidrawlib` | Excalidraw | Component library for system design diagrams (import via Excalidraw's library menu) |
+| `.zprofile` `.zshrc` `.vimrc` `.gitconfig` `.gitignore_global` | `~/` (symlinked) | Shell env, aliases, vim, git identity, global ignores |
+| `.gitconfig-local.example` | n/a, copy to `~/.gitconfig.local` | Per-client git email override, included unconditionally, gitignored if it doesn't exist |
+| `.claude/user/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlinked) | Coding standards, communication style, tooling rules for every Claude Code session |
+| `.claude/user/RTK.md` | `~/.claude/RTK.md` (symlinked) | RTK (token-optimizing CLI proxy) usage guide |
+| `.claude/user/settings.json` | `~/.claude/settings.json` (merged, never overwritten) | Harness config: permissions, hooks, plugins, `autoMode` |
+| `.claude/user/hooks/` | `~/.claude/hooks/` (symlinked) | Hook scripts referenced from `settings.json` |
+| `.claude/skills/` | `~/.claude/skills/` (symlinked) | Reusable skills, see [`.claude/skills/README.md`](.claude/skills/README.md) |
+| `apps/cursor/` | Cursor's settings, MCP config, and CLI agent config | |
+| `apps/iterm2/` | iTerm2 profile + a `defaults write` script for globals | |
+| `apps/sublime/`, `apps/docker/` | One small preferences file each | |
+| `reference/` | n/a | Source material referenced from `CLAUDE.md` or imported into a design tool, not installed anywhere |
 
-### Skills
+Everything under `.claude/user/` and `apps/` is written by
+`.claude/skills/config-sync/scripts/sync.py`, never edited in place on a
+machine and copied back by hand -- see that skill for the sync model and why
+some files are symlinks and others are merged.
 
-Four skills under `.claude/skills/`, each a folder with a `SKILL.md` entrypoint:
+## Keeping it current
 
-- **disk-janitor**: finds and reclaims disk space on macOS via a tiered,
-  stdlib-only Python script. Always dry-runs first.
-- **frontend-review**: stack-aware pre-merge review for React/Next.js projects
-  (a11y, SEO, security, perf, TS, Tailwind).
-- **job-fit-assessor**: scores a candidate profile against a job description,
-  outputs an interactive React artifact.
-- **travel-planner**: turns raw trip data into a printable itinerary table plus
-  a Leaflet route map.
+Run `/config-sync` (or `python3 .claude/skills/config-sync/scripts/sync.py
+--pull`) after a settings change you want to keep, and review what it flags
+before committing -- some of it is deliberately not auto-pulled. `AGENTS.md`
+has the invariants for editing this repo; `CI` (`.github/workflows/`) checks
+the mechanical stuff on every PR (no secrets, no machine-specific paths,
+configs still parse); genuinely judging "hand-edited vs. accumulated noise"
+stays a human-in-the-loop step in the skill, not something CI enforces.
 
-[`.claude/skills/README.md`](.claude/skills/README.md) covers usage details,
-adding new skills, and packaging skills as `.skill` files for Claude Chat.
-
-## Fresh Mac setup
-
-1. **Prerequisites.** Install [Homebrew](https://brew.sh), then:
-
-   ```bash
-   brew install gh pyenv nvm
-   curl -fsSL https://bun.sh/install | bash
-   gh auth login
-   ```
-
-   Install [Claude Code](https://claude.com/claude-code) and RTK, the Rust
-   Token Killer (the `rtk` binary must land in `~/.local/bin`; the
-   settings.json hook calls it on every Bash invocation). Careful when
-   searching for it: `reachingforthejack/rtk` is a different tool.
-
-2. **Clone and copy into place.**
-
-   ```bash
-   git clone git@github.com:cmin764/configs.git ~/Work/cmin764/configs
-   cd ~/Work/cmin764/configs
-
-   cp .zprofile .zshrc .vimrc .gitconfig .gitignore_global ~/
-   mkdir -p ~/.claude
-   cp .claude/settings.json ~/.claude/
-   ln -s "$PWD/.claude/CLAUDE.md" ~/.claude/CLAUDE.md
-   ln -s "$PWD/.claude/RTK.md" ~/.claude/RTK.md
-   cp -R .claude/skills ~/.claude/skills
-   ```
-
-3. **Wire the global gitignore.**
-
-   ```bash
-   git config --global core.excludesfile ~/.gitignore_global
-   ```
-
-4. **Initialize RTK once.** On a brand-new machine run `rtk init -g` to install
-   the global hook. Never re-run it on a machine that's already set up: since
-   `~/.claude/RTK.md` is a symlink, `rtk init -g` would overwrite the repo's
-   copy through it (see that file for details).
-
-5. **Re-add secrets.** Open `~/.zprofile` and fill in the tokens section at the
-   bottom (`GITHUB_TOKEN`, `ANTHROPIC_API_KEY`, ...). These never go in the repo.
-
-6. **Restart the shell**, open Claude Code anywhere, and confirm the skills show
-   up (`/disk-janitor` should autocomplete).
-
-Cursor: paste `cursor-settings.json` into Cursor's user settings JSON.
-Excalidraw: import `system-design.excalidrawlib` through the library sidebar.
-
-## Keeping things in sync
-
-There's no sync script for most files; the model is deliberate copies in both
-directions. `CLAUDE.md` and `RTK.md` are symlinked instead, so there's nothing
-to sync for them, editing either path edits the one file.
-
-- **Symlinked, single source of truth**: `CLAUDE.md`, `RTK.md`.
-- **Must stay identical** between repo and home (plain copies): `.zshrc`,
-  `.vimrc`, `.gitconfig`, `.gitignore_global`, `skills/`, `hooks/`.
-- **Intentionally diverge** per machine:
-  - `~/.zprofile` carries real secrets; the repo copy keeps the section as
-    commented placeholders. Sync everything above the secrets divider.
-  - `~/.claude/settings.json` accumulates machine-local permission grants.
-    Port over only the rules worth keeping everywhere.
-- **Never committed**: `.claude/settings.local.json` (gitignored) and anything
-  containing a token.
-
-The maintenance loop: tweak a config in `~` as you work, then diff against the
-repo and copy the shareable part back:
-
-```bash
-cd ~/Work/cmin764/configs
-for f in .zshrc .zprofile .vimrc .gitconfig .gitignore_global; do
-  diff -q ~/$f $f
-done
-diff ~/.claude/settings.json .claude/settings.json
-diff -r ~/.claude/skills .claude/skills
-diff -r ~/.claude/hooks .claude/hooks
-```
-
-Anything that drifted: copy it in, review with `git diff`, commit. Same flow in
-reverse after a `git pull` on another machine.
-
-## Maintenance habits
-
-- A config change that survives a week belongs in the repo. Commit it before
-  the next machine swap makes you reconstruct it.
-- Skills: edit in the repo, test in a Claude Code session, copy to
-  `~/.claude/skills`, commit. Claude Chat needs a manual repackage and
-  re-upload after every change.
-- `CLAUDE.md` edits are high-stakes (every session loads it). Keep them
-  surgical and reviewed.
-- Audit `~/.zprofile`'s secrets section occasionally; it's the one file where
-  repo and reality are supposed to differ.
+Promoting a skill from a project repo into `.claude/skills/` here is a
+separate, occasional decision -- worth doing when something proves reusable
+across projects, not something to automate into the sync loop.

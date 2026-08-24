@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "excalidraw-architect": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "excalidraw-architect-mcp",
+        "python",
+        "-c",
+        "from excalidraw_mcp.server import mcp; mcp.run(transport='stdio')"
+      ],
+      "env": {
+        "FASTMCP_SHOW_SERVER_BANNER": "0"
+      }
+    },
+    "claude-mem": {
+      "command": "node",
+      "args": [
+        "$HOME/.claude/plugins/marketplaces/thedotmack/plugin/scripts/mcp-server.cjs"
+      ]
+    },
+    "github": {
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${env:GITHUB_TOKEN}"
+      }
+    }
+  }
+}
