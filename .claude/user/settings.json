@@ -89,6 +89,7 @@
   "tui": "fullscreen",
   "autoDreamEnabled": true,
   "theme": "auto",
+  "outputStyle": "Concise",
   "editorMode": "normal",
   "teammateMode": "in-process",
   "worktree": {
