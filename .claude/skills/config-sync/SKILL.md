@@ -69,23 +69,28 @@ Order matters; later steps assume earlier ones landed.
 3. **Restore**: `cd ~/Work/cmin764/configs && python3 .claude/skills/config-sync/scripts/sync.py --restore`.
    Any real file already at a symlink target gets backed up to
    `<name>.pre-config-sync.bak` next to it, never silently overwritten.
-4. **Fill in secrets**: create `~/.zprofile.local` (`chmod 600`) with the six
+4. **Initialize RTK once**: now that step 3 has symlinked `~/.claude/RTK.md`
+   to the repo copy, run `rtk init -g` to install the global hook. Never
+   re-run it on a machine that's already set up -- since `~/.claude/RTK.md`
+   is a symlink, `rtk init -g` would overwrite the repo's copy through it
+   (see that file for details).
+5. **Fill in secrets**: create `~/.zprofile.local` (`chmod 600`) with the six
    keys named in `.zprofile`'s comments (`GITHUB_TOKEN`, `OPENAI_API_KEY`,
    `GEMINI_API_KEY`, `GOOGLE_MAPS_API_KEY`, `TALLY_API_KEY`, `CAL_API_KEY`).
    **Rotate these on the first restore after 2026-08-23** -- they were exposed
    in a Claude Code session transcript while this repo was being rebuilt, so
    treat the old values as burned regardless of which machine you're on.
-5. **Per-client git identity**, if any: `cp .gitconfig-local.example
+6. **Per-client git identity**, if any: `cp .gitconfig-local.example
    ~/.gitconfig.local` and fill in the real `includeIf` block. `.gitconfig`
    includes this file unconditionally; git silently skips it if absent, so
    personal machines with no client work need to do nothing here.
-6. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
-7. **`claude mcp add`** the one hand-added MCP server (no token needed, OAuth
+7. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
+8. **`claude mcp add`** the one hand-added MCP server (no token needed, OAuth
    lives in the keychain):
    ```
    claude mcp add --transport http tally https://api.tally.so/mcp
    ```
-8. **Verify**: open a new shell (`echo $PATH` should start with
+9. **Verify**: open a new shell (`echo $PATH` should start with
    `~/.local/bin`), `gh auth login`, then `gh auth status` and a `git fetch` on
    a private repo to confirm the credential helper resolves `gh` via `PATH`
    rather than the Intel-only `/usr/local/bin/gh` this repo used to hardcode.

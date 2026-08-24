@@ -46,7 +46,7 @@ def is_shell_file(path):
 
 
 def is_reference_asset(rel):
-    return "reference/" in rel  # curated binary assets belong here, see check_junk
+    return "reference/" in rel  # curated binary assets belong here (exempts check_binary only)
 
 
 def tracked_files():

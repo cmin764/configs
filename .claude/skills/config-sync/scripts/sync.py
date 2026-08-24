@@ -14,7 +14,6 @@ Modes:
 Stdlib only. Safe to re-run any mode; that repeatability is the test.
 """
 import json
-import os
 import plistlib
 import shutil
 import sys
@@ -121,7 +120,7 @@ def repo_path(rel):
 
 
 def home_path(rel):
-    return Path(os.path.expanduser(rel))
+    return Path(rel).expanduser()
 
 
 def ensure_parent(path):
@@ -145,6 +144,8 @@ def sync_symlink(src_rel, dst_rel, mode):
     if mode == "status":
         if dst.is_symlink() and dst.resolve() == src.resolve():
             print(f"[symlink ok]   {dst_rel}")
+        elif dst.is_symlink():
+            print(f"[broken link]  {dst_rel} (wrong or dangling target, --restore will fix)")
         elif not dst.exists():
             print(f"[missing]      {dst_rel} (not yet linked)")
         else:
@@ -269,7 +270,12 @@ def sync_iterm2(mode):
         if not profiles:
             print("  skip iterm2: no profiles in the local plist")
             return
-        profile = next((p for p in profiles if p.get("Name") == "Driftware"), profiles[0])
+        profile = next((p for p in profiles if p.get("Name") == "Driftware"), None)
+        if profile is None:
+            print("  skip iterm2: no profile named 'Driftware' in the local plist "
+                  "-- rename your profile first, or this would overwrite the "
+                  "template with the wrong one")
+            return
         profile = dict(profile)
         profile["Guid"] = ITERM2_PROFILE_GUID
         if profile.get("Working Directory", "").startswith(str(HOME)):
