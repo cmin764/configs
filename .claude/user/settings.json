@@ -30,8 +30,8 @@
     ]
   },
   "attribution": {
-    "commit": null,
-    "pr": null,
+    "commit": "",
+    "pr": "",
     "sessionUrl": false
   },
   "cleanupPeriodDays": 14,

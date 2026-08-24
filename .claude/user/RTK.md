@@ -78,17 +78,24 @@ gh pr diff -- path/to/file.ts      # full diff for one file only when needed
 
 ## Name Collision Warning
 
-If `rtk gain` fails, you may have `reachingforthejack/rtk` (Rust Type Kit) installed instead of this tool.
-Also unrelated: the `rtk` package on npm (`cliffano/rtk`, a changelog/release tool) — do not `npm install -g rtk` expecting this tool.
+If `rtk gain` fails, you may have "Rust Type Kit" (a different `rtk` on crates.io) installed instead of this tool.
 
 ## Upgrading
 
-Currently on v0.44.1, installed manually to `~/.local/bin/rtk`. As of mid-2026 this tool is in
-`homebrew-core` (`brew info rtk`) — prefer `brew upgrade rtk` going forward if the binary was
-(re)installed via Homebrew. Otherwise grab the latest release for your platform from
-https://github.com/rtk-ai/rtk/releases/latest, verify against `checksums.txt`, and swap the binary
-at `~/.local/bin/rtk`. There is still no `rtk update`/`self-update` subcommand — check
-`rtk --version` against the latest GitHub release manually.
+Currently on v0.45.0, installed to `~/.local/bin/rtk` via the official installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+```
+
+It downloads the release tarball for your platform, verifies it against `checksums.txt`
+(SHA-256), and swaps the binary at `~/.local/bin/rtk`. There is no `rtk update`/`self-update`
+subcommand — check `rtk --version` against the latest GitHub release manually.
+
+`brew install rtk` also exists (this tool is in `homebrew-core`), but on this Mac it has no
+bottle for the installed macOS/Homebrew tier and falls back to building from source, pulling
+in `llvm` as a dependency (a 30+ minute build for a small CLI). Stick with the installer script
+above unless a future bottle covers this machine.
 
 ## Fixed Bug — `git log` After a Merge (resolved in v0.42.0)
 
