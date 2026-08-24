@@ -38,8 +38,6 @@ JUNK_NAMES = re.compile(
     r"\.env(\..+)?|.*\.pid|Thumbs\.db|.*[_-]cache.*)$"
 )
 
-MAX_SIZE_OUTSIDE_REFERENCE = 200 * 1024  # reference/ holds curated large assets
-
 SHELL_FILENAMES = {".zprofile", ".zshrc"}  # shell dotfiles: no ".sh" suffix to key off
 
 
@@ -52,8 +50,12 @@ def is_reference_asset(rel):
 
 
 def tracked_files():
-    out = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True,
-                          text=True, check=True)
+    # --others --exclude-standard: also catch a new file with a real secret
+    # before it's ever `git add`ed, since AGENTS.md's own workflow expects
+    # this to be run by hand ahead of a commit, not just by CI post-checkout.
+    out = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=True)
     return [REPO_ROOT / p for p in out.stdout.splitlines() if p]
 
 
@@ -112,9 +114,24 @@ def strip_jsonc(text):
             i += 2
             continue
         if c == ",":
+            # Look past whitespace AND comments (a trailing comma can be
+            # followed by "// ..." or "/* ... */" before the closing
+            # bracket) to decide whether to drop it. The comments
+            # themselves still get stripped normally on a later pass.
             j = i + 1
-            while j < n and text[j] in " \t\r\n":
-                j += 1
+            while j < n:
+                if text[j] in " \t\r\n":
+                    j += 1
+                elif text[j] == "/" and j + 1 < n and text[j + 1] == "/":
+                    while j < n and text[j] != "\n":
+                        j += 1
+                elif text[j] == "/" and j + 1 < n and text[j + 1] == "*":
+                    j += 2
+                    while j + 1 < n and not (text[j] == "*" and text[j + 1] == "/"):
+                        j += 1
+                    j += 2
+                else:
+                    break
             if j < n and text[j] in "}]":
                 i += 1  # drop trailing comma, outside any string
                 continue
@@ -188,17 +205,16 @@ def check_single_arch_brew(files, findings):
 
 
 def check_junk(files, findings):
+    # Name-pattern matching only: a mechanical rule, not a judgment call.
+    # Whether a large file is genuinely hand-edited vs. accumulated noise is
+    # a human call made during config-sync's --pull, on purpose -- see
+    # AGENTS.md's "CI vs. judgment" section. Don't grow this into a size
+    # heuristic; that's exactly the judgment CI is not supposed to make.
     for path in files:
         rel = path.relative_to(REPO_ROOT).as_posix()
         if JUNK_NAMES.search(rel):
             findings.append(f"{rel}: looks like an accumulated/generated file, not "
                              f"hand-edited config")
-        size = path.stat().st_size
-        if not is_reference_asset(rel) and size > MAX_SIZE_OUTSIDE_REFERENCE:
-            findings.append(f"{rel}: {size // 1024}KB, larger than "
-                             f"hand-edited config usually is -- move to reference/ "
-                             f"if it's a curated asset, otherwise it's probably "
-                             f"generated")
 
 
 def _selftest():
@@ -209,6 +225,10 @@ def _selftest():
     # trailing comma before the object's closing brace
     tricky = '{"a": "value,}", "b": 1,}'
     assert json.loads(strip_jsonc(tricky)) == {"a": "value,}", "b": 1}, strip_jsonc(tricky)
+    # a trailing comma followed by a comment, then the closing bracket, must
+    # still be recognized as trailing (not just comma-then-whitespace)
+    commented_trailing = '{"a": 1, // trailing\n}'
+    assert json.loads(strip_jsonc(commented_trailing)) == {"a": 1}, strip_jsonc(commented_trailing)
     print("selftest ok")
 
 

@@ -40,6 +40,8 @@ ITERM2_DST_REL = "apps/iterm2/Driftware.json"
 ITERM2_DST = "~/Library/Application Support/iTerm2/DynamicProfiles/Driftware.json"
 
 # Files the owning app rewrites, so a plain copy in the direction it's used.
+# iTerm2 is handled separately by sync_iterm2 (its repo copy is re-extracted
+# from a binary plist, not just copied), so it isn't listed here.
 COPIES = [
     ("apps/cursor/settings.json",
      "~/Library/Application Support/Cursor/User/settings.json"),
@@ -48,7 +50,6 @@ COPIES = [
      "~/Library/Application Support/Sublime Text/Packages/User/"
      "Preferences.sublime-settings"),
     ("apps/docker/daemon.json", "~/.docker/daemon.json"),
-    (ITERM2_DST_REL, ITERM2_DST),
 ]
 
 # Same shape as the app-rewritten list above, but the live file carries
@@ -181,6 +182,7 @@ def sync_copy(src_rel, dst_rel, mode):
         if not dst.exists():
             print(f"  skip {src_rel}: nothing live to pull")
             return
+        ensure_parent(src)
         shutil.copy2(dst, src)
         print(f"  pulled {dst_rel} -> {src_rel}")
 
@@ -209,6 +211,7 @@ def sync_trimmed(src_rel, dst_rel, drop_keys, mode):
         live = json.loads(dst.read_text())
         for k in drop_keys:
             live.pop(k, None)
+        ensure_parent(src)
         src.write_text(json.dumps(live, indent=2) + "\n")
         print(f"  pulled {dst_rel} -> {src_rel} (dropped {', '.join(sorted(drop_keys))})")
 
@@ -272,6 +275,7 @@ def sync_iterm2(mode):
         if profile.get("Working Directory", "").startswith(str(HOME)):
             profile["Working Directory"] = "$HOME"
         out_path = repo_path(ITERM2_DST_REL)
+        ensure_parent(out_path)
         out_path.write_text(json.dumps({"Profiles": [profile]}, indent=2, default=str))
         print(f"  pulled iTerm2 profile '{profile.get('Name')}' -> {ITERM2_DST_REL}")
     elif mode in ("restore", "push"):
@@ -283,8 +287,6 @@ def run(mode):
     for src, dst in SYMLINKS:
         sync_symlink(src, dst, mode)
     for src, dst in COPIES:
-        if src == ITERM2_DST_REL:
-            continue  # handled by sync_iterm2, which also re-exports on pull
         sync_copy(src, dst, mode)
     sync_iterm2(mode)
     for src, dst, drop_keys in TRIMMED_COPIES:
