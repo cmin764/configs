@@ -130,6 +130,10 @@ def ensure_parent(path):
 def backup_if_real_file(path):
     if path.exists() and not path.is_symlink():
         backup = path.with_name(path.name + ".pre-config-sync.bak")
+        n = 1
+        while backup.exists():
+            backup = path.with_name(f"{path.name}.pre-config-sync.bak.{n}")
+            n += 1
         print(f"  backing up existing {path} -> {backup}")
         shutil.move(str(path), str(backup))
 
@@ -162,6 +166,8 @@ def sync_copy(src_rel, dst_rel, mode):
     if mode == "status":
         if not dst.exists():
             print(f"[missing]      {dst_rel}")
+        elif not src.exists():
+            print(f"[missing src]  {dst_rel} (repo file gone, check COPIES)")
         elif src.read_bytes() == dst.read_bytes():
             print(f"[in sync]      {dst_rel}")
         else:
@@ -194,10 +200,9 @@ def sync_trimmed(src_rel, dst_rel, drop_keys, mode):
               f"{dst_rel} (trimmed compare)")
         return
     if mode in ("restore", "push"):
-        ensure_parent(dst)
-        shutil.copy2(src, dst)
-        print(f"  wrote {dst_rel}")
-    elif mode == "pull":
+        sync_copy(src_rel, dst_rel, mode)
+        return
+    if mode == "pull":
         if not dst.exists():
             print(f"  skip {src_rel}: nothing live to pull")
             return

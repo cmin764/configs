@@ -8,7 +8,7 @@ config versus accumulated tool noise is NOT here -- that's a human call made
 via config-sync's --pull, on purpose (see AGENTS.md). Keeping that judgment
 out of CI is deliberate, not an oversight.
 
-Exit code is the number of findings (0 = clean), so CI fails loudly.
+Exit code is 1 if there are any findings, 0 if clean, so CI fails loudly.
 """
 import json
 import re
@@ -39,6 +39,16 @@ JUNK_NAMES = re.compile(
 )
 
 MAX_SIZE_OUTSIDE_REFERENCE = 200 * 1024  # reference/ holds curated large assets
+
+SHELL_FILENAMES = {".zprofile", ".zshrc"}  # shell dotfiles: no ".sh" suffix to key off
+
+
+def is_shell_file(path):
+    return path.suffix == ".sh" or path.name in SHELL_FILENAMES
+
+
+def is_reference_asset(rel):
+    return "reference/" in rel  # curated binary assets belong here, see check_junk
 
 
 def tracked_files():
@@ -101,10 +111,16 @@ def strip_jsonc(text):
                 i += 1
             i += 2
             continue
+        if c == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1  # drop trailing comma, outside any string
+                continue
         out.append(c)
         i += 1
-    stripped = "".join(out)
-    return re.sub(r",(\s*[}\]])", r"\1", stripped)
+    return "".join(out)
 
 
 def check_json(files, findings):
@@ -123,9 +139,12 @@ def check_json(files, findings):
 
 def check_shell_syntax(files, findings):
     for path in files:
-        if path.suffix != ".sh":
+        if not is_shell_file(path):
             continue
-        result = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
+        # .zprofile/.zshrc are zsh dotfiles, not bash -- zsh has syntax
+        # (e.g. glob qualifiers) that bash -n rejects as invalid.
+        shell = "zsh" if path.name in SHELL_FILENAMES else "bash"
+        result = subprocess.run([shell, "-n", str(path)], capture_output=True, text=True)
         if result.returncode != 0:
             findings.append(f"{path.relative_to(REPO_ROOT)}: shell syntax error: "
                              f"{result.stderr.strip()}")
@@ -134,8 +153,8 @@ def check_shell_syntax(files, findings):
 def check_binary(files, findings):
     for path in files:
         rel = path.relative_to(REPO_ROOT).as_posix()
-        if "reference/" in rel:
-            continue  # curated binary assets belong here, see check_junk
+        if is_reference_asset(rel):
+            continue
         if read_text(path) is None:
             findings.append(f"{rel}: not valid UTF-8 (looks like a committed binary)")
 
@@ -156,7 +175,7 @@ def check_machine_paths(files, findings):
 
 def check_single_arch_brew(files, findings):
     for path in files:
-        if path.name not in (".zprofile", ".zshrc") and path.suffix not in (".sh",):
+        if not is_shell_file(path):
             continue
         text = read_text(path)
         if text is None:
@@ -174,8 +193,9 @@ def check_junk(files, findings):
         if JUNK_NAMES.search(rel):
             findings.append(f"{rel}: looks like an accumulated/generated file, not "
                              f"hand-edited config")
-        if "reference/" not in rel and path.stat().st_size > MAX_SIZE_OUTSIDE_REFERENCE:
-            findings.append(f"{rel}: {path.stat().st_size // 1024}KB, larger than "
+        size = path.stat().st_size
+        if not is_reference_asset(rel) and size > MAX_SIZE_OUTSIDE_REFERENCE:
+            findings.append(f"{rel}: {size // 1024}KB, larger than "
                              f"hand-edited config usually is -- move to reference/ "
                              f"if it's a curated asset, otherwise it's probably "
                              f"generated")
@@ -185,6 +205,10 @@ def _selftest():
     src = '{\n  // comment with a url http://not-stripped-wrong\n  "a": "https://example.com", /* inline */ "b": 1,\n}'
     parsed = json.loads(strip_jsonc(src))
     assert parsed == {"a": "https://example.com", "b": 1}, parsed
+    # a string value ending in ",}" must survive -- not be mistaken for a
+    # trailing comma before the object's closing brace
+    tricky = '{"a": "value,}", "b": 1,}'
+    assert json.loads(strip_jsonc(tricky)) == {"a": "value,}", "b": 1}, strip_jsonc(tricky)
     print("selftest ok")
 
 
