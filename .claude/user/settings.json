@@ -90,7 +90,7 @@
   "autoDreamEnabled": true,
   "theme": "auto",
   "editorMode": "normal",
-  "teammateMode": "auto",
+  "teammateMode": "in-process",
   "worktree": {
     "baseRef": "fresh"
   },
