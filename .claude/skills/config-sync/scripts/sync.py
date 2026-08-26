@@ -307,32 +307,6 @@ def sync_iterm2(mode):
         sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
 
 
-def sync_plugin_dir(profile_dir, mode):
-    """Installed plugin code/marketplace clones aren't hand-edited config and
-    don't depend on which account is logged in -- share one copy across every
-    profile instead of a separate `claude plugin install` per org. (Real
-    plugin state like claude-mem's memory DB lives outside plugins/, e.g.
-    ~/.claude-mem, so this doesn't leak account-specific data.)"""
-    default_plugins = HOME / ".claude" / "plugins"
-    dst = profile_dir / "plugins"
-    if mode == "status":
-        if dst.is_symlink() and dst.resolve() == default_plugins.resolve():
-            print("[symlink ok]   plugins")
-        elif not dst.exists():
-            print("[missing]      plugins (not yet linked)")
-        else:
-            print("[not a link]   plugins (real dir, --restore will back it up)")
-        return
-    if mode == "pull":
-        return  # nothing to pull, it's not repo content
-    backup_if_real_file(dst)
-    ensure_parent(dst)
-    if dst.is_symlink() or dst.exists():
-        dst.unlink()
-    dst.symlink_to(default_plugins)
-    print("  linked plugins -> ~/.claude/plugins")
-
-
 def run(mode):
     print(f"== config-sync --{mode} ==")
     for src, dst in SYMLINKS:
@@ -341,8 +315,6 @@ def run(mode):
         print(f"-- profile {profile_dir} --")
         for src, rel in CLAUDE_PROFILE_SYMLINKS:
             sync_symlink(src, profile_dir / rel, mode)
-        if profile_dir != HOME / ".claude":
-            sync_plugin_dir(profile_dir, mode)
         for src, rel in CLAUDE_PROFILE_MERGES:
             sync_merge(src, profile_dir / rel, mode)
     for src, dst in COPIES:
