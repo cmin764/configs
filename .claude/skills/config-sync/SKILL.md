@@ -66,11 +66,16 @@ Order matters; later steps assume earlier ones landed.
 them, don't just silently skip or silently include:** `pyenv` (step 13),
 JetBrains Toolbox/any JetBrains IDE (step 12), the `tally` MCP server and
 the `linear`/`lucid` MCP servers (step 9), and the `vercel` plugin (step 10
--- `enabledPlugins` reads `false` for it in `.claude/user/settings.json` on
-purpose, and step 10 doesn't install it either; rarely used, skip it
-entirely on a fresh restore and install it fresh with `claude plugin
-install vercel@claude-plugins-official` on the rare occasion it's actually
-needed). Each costs real time and disk (or an auth step, or clutters
+-- not in `.claude/user/settings.json`'s `enabledPlugins` at all, not
+installed by step 10 either; rarely used, skip it entirely on a fresh
+restore and install it fresh with `claude plugin install
+vercel@claude-plugins-official` on the rare occasion it's actually needed.
+Since `plugins/` is shared across every Claude profile (see the sync table
+above), installing it anywhere installs it for every org profile too --
+confirmed causing a recurring "enabled but not installed" panel error when
+it got auto-installed by Claude Code's own official-marketplace bootstrap
+on a fresh profile, so it's now fully uninstalled rather than just
+disabled). Each costs real time and disk (or an auth step, or clutters
 `/context` with tool defs) if added unnecessarily, and each has a genuine
 "maybe I do want this" case (a project pinning an old Python via
 `.python-version`, a JetBrains IDE for a specific stack, actually using
