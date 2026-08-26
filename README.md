@@ -14,8 +14,10 @@ for it to go stale.
 ## Quick start on a new Mac
 
 ```bash
-# Prerequisites: Homebrew, then gh (git credential helper), Claude Code, rtk
+# Prerequisites: Homebrew, then gh (git credential helper), rtk
 brew install gh rtk
+# Claude Code via the official installer, not brew (see SKILL.md step 1)
+curl -fsSL https://claude.ai/install.sh | bash
 gh auth login
 
 git clone git@github.com:cmin764/configs.git ~/Work/cmin764/configs

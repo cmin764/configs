@@ -72,7 +72,18 @@ installed."
 
 1. **Install prerequisites**: Homebrew, then `brew install gh` (git credential
    helper) and whatever else this machine's `brew leaves`/`brew list --cask`
-   needs -- not committed here, by the scope rule above. Install Claude Code.
+   needs -- not committed here, by the scope rule above.
+   Install Claude Code via the **official installer only**, never
+   `brew install --cask claude-code`:
+   `curl -fsSL https://claude.ai/install.sh | bash` (lands at `~/.local/bin/claude`).
+   The cask exists and installs fine, but it fights the installer's own
+   self-update mechanism -- `DISABLE_AUTOUPDATER: "1"` in
+   `.claude/user/settings.json` turns off silent background updates either
+   way, but with the cask installed, `claude update` and `brew upgrade`
+   become two competing update paths for the same binary. Update only with
+   `claude update`; if a cask install is ever found on a machine
+   (`brew list --cask | grep claude-code`), `brew uninstall --cask
+   claude-code` then reinstall via the curl command above.
    Install `rtk` (now in homebrew-core: `brew install rtk`; do **not** copy the
    x86_64 binary from an Intel machine's `~/.local/bin/rtk`).
 2. **Clone this repo**: `git clone git@github.com:cmin764/configs.git ~/Work/cmin764/configs`.
