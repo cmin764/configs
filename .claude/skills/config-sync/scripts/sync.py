@@ -29,11 +29,36 @@ SYMLINKS = [
     (".vimrc", "~/.vimrc"),
     (".gitconfig", "~/.gitconfig"),
     (".gitignore_global", "~/.gitignore_global"),
-    (".claude/user/CLAUDE.md", "~/.claude/CLAUDE.md"),
-    (".claude/user/RTK.md", "~/.claude/RTK.md"),
-    (".claude/user/hooks", "~/.claude/hooks"),
-    (".claude/skills", "~/.claude/skills"),
 ]
+
+# Same shape as SYMLINKS/MERGES, but applied once per Claude Code profile
+# directory: the default ~/.claude plus any ~/.claude-<org> profile created
+# for per-org account isolation (see .zshrc's chpwd hook). A fresh Mac has
+# only ~/.claude, so --restore behaves exactly as before this existed.
+CLAUDE_PROFILE_SYMLINKS = [
+    (".claude/user/CLAUDE.md", "CLAUDE.md"),
+    (".claude/user/RTK.md", "RTK.md"),
+    (".claude/user/hooks", "hooks"),
+    (".claude/skills", "skills"),
+]
+CLAUDE_PROFILE_MERGES = [
+    (".claude/user/settings.json", "settings.json"),
+]
+
+
+def claude_profile_dirs():
+    """~/.claude plus any ~/.claude-<org> profile that actually matches a
+    ~/Work/<org> directory -- not a blind ~/.claude-* glob, which would also
+    catch unrelated dirs other tools own (e.g. claude-mem's ~/.claude-mem)."""
+    default = [HOME / ".claude"]
+    work = HOME / "Work"
+    if not work.is_dir():
+        return default
+    orgs = sorted(p.name.lower() for p in work.iterdir() if p.is_dir())
+    extra = [HOME / f".claude-{org}" for org in orgs
+             if (HOME / f".claude-{org}").is_dir()]
+    return default + extra
+
 
 ITERM2_DST_REL = "apps/iterm2/Wandercode.json"
 ITERM2_DST = "~/Library/Application Support/iTerm2/DynamicProfiles/Wandercode.json"
@@ -58,12 +83,6 @@ TRIMMED_COPIES = [
     ("apps/cursor/cli-config.json", "~/.cursor/cli-config.json",
      {"authInfo", "privacyCache", "autoReviewAvailabilityCache",
       "serverConfigCache", "network"}),
-]
-
-# Accumulate live-only state (permission grants, plugin toggles picked up
-# by the harness) -- deep-merged, never overwritten outright.
-MERGES = [
-    (".claude/user/settings.json", "~/.claude/settings.json"),
 ]
 
 ITERM2_PLIST = Path("~/Library/Preferences/com.googlecode.iterm2.plist").expanduser()
@@ -292,13 +311,17 @@ def run(mode):
     print(f"== config-sync --{mode} ==")
     for src, dst in SYMLINKS:
         sync_symlink(src, dst, mode)
+    for profile_dir in claude_profile_dirs():
+        print(f"-- profile {profile_dir} --")
+        for src, rel in CLAUDE_PROFILE_SYMLINKS:
+            sync_symlink(src, profile_dir / rel, mode)
+        for src, rel in CLAUDE_PROFILE_MERGES:
+            sync_merge(src, profile_dir / rel, mode)
     for src, dst in COPIES:
         sync_copy(src, dst, mode)
     sync_iterm2(mode)
     for src, dst, drop_keys in TRIMMED_COPIES:
         sync_trimmed(src, dst, drop_keys, mode)
-    for src, dst in MERGES:
-        sync_merge(src, dst, mode)
 
 
 def main():

@@ -19,9 +19,11 @@ order on a bare machine.
 
 | Kind | Files | Why |
 |---|---|---|
-| **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global`, `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/`, `.claude/skills/` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
+| **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
+| **Symlink (per Claude profile)** | `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/`, `.claude/skills/` | Same as above, but applied once per Claude Code profile directory: `~/.claude` plus any `~/.claude-<org>` created for per-org account isolation (see restore step 7). A fresh Mac only has `~/.claude`. These are the user's own authored tooling (this repo's skills, hooks, memory files) -- deliberately identical everywhere, unlike plugins/MCP below: there's no personal-vs-work split for skills *you* wrote, only for third-party installs. A project's own `.claude/skills/` (versioned and shared with a team through that project's own repo) is a separate, unrelated layer Claude Code discovers per-project regardless of `CLAUDE_CONFIG_DIR` -- out of scope for this skill entirely, see README's note on skill promotion. |
+| **Not synced, deliberately** | `plugins/` and MCP registrations (`.claude.json`) inside each Claude profile | User-scope Claude Code state Claude Code itself keeps per config dir, not per human -- `claude plugin install`/`claude mcp add --scope user` only ever touch whichever `CLAUDE_CONFIG_DIR` is active. Installing a plugin under the personal profile must not make it appear at work and vice versa, so each profile gets its own independent install/registration (step 7's recipe repeats the commands per org) rather than sharing one copy. Costs some duplicate disk for plugins used in both places -- worth it for the isolation. |
 | **Copy** | `apps/cursor/settings.json`, `apps/cursor/mcp.json`, `apps/sublime/*`, `apps/docker/daemon.json`, `apps/iterm2/Wandercode.json` | The owning app rewrites its own file, so a symlink would let app noise flow straight into a public repo. Plain overwrite either direction is safe: these files carry no secrets. |
-| **Merge** | `.claude/user/settings.json` (installs to `~/.claude/settings.json`) | Claude Code itself writes to this file (permission grants, plugin state). A plain copy on push would erase legitimate accumulated state; a plain copy on pull would drag that noise into the repo. Deep-merge, repo wins on conflicts, machine-only keys survive a push. |
+| **Merge (per Claude profile)** | `.claude/user/settings.json` (installs to `<profile>/settings.json`) | Claude Code itself writes to this file (permission grants, plugin state). A plain copy on push would erase legitimate accumulated state; a plain copy on pull would drag that noise into the repo. Deep-merge, repo wins on conflicts, machine-only keys survive a push. Applied per profile, same set as the symlinks above. |
 
 One file needs a fourth treatment: `apps/cursor/cli-config.json` carries
 `authInfo` (email, userId, teamId) on the live machine that must never reach a
@@ -48,7 +50,7 @@ All four are idempotent. `--status` never writes anything; run it first.
 
 ## What `--pull` deliberately refuses to automate
 
-`--pull` never auto-merges `~/.claude/settings.json` back into the repo template.
+`--pull` never auto-merges a Claude profile's `settings.json` back into the repo template.
 That file accumulates permission grants and `autoMode.environment` blocks the
 harness writes on its own (that's exactly the noise the template was built to
 strip out). It prints a diff instead, one dotted path per difference, so a human
@@ -60,23 +62,27 @@ cruft. Everything else pulls automatically because it's either low-sensitivity
 
 Order matters; later steps assume earlier ones landed.
 
-**Four things are optional, not default -- ask before installing/adding
+**Five things are optional, not default -- ask before installing/adding
 them, don't just silently skip or silently include:** `pyenv` (step 13),
-JetBrains Toolbox/any JetBrains IDE (step 12), the `tally` MCP server
-(step 9), and the `vercel` plugin (step 10 -- `enabledPlugins` reads
-`false` for it in `.claude/user/settings.json` on purpose, and step 10
-doesn't install it either; rarely used, skip it entirely on a fresh
+JetBrains Toolbox/any JetBrains IDE (step 12), the `tally` MCP server and
+the `linear`/`lucid` MCP servers (step 9), and the `vercel` plugin (step 10
+-- not in `.claude/user/settings.json`'s `enabledPlugins` at all, not
+installed by step 10 either; rarely used, skip it entirely on a fresh
 restore and install it fresh with `claude plugin install
-vercel@claude-plugins-official` on the rare occasion it's actually
-needed). Each costs real time and disk (or an auth step, or clutters
+vercel@claude-plugins-official` on the rare occasion it's actually needed.
+Since `plugins/` is shared across every Claude profile (see the sync table
+above), installing it anywhere installs it for every org profile too --
+confirmed causing a recurring "enabled but not installed" panel error when
+it got auto-installed by Claude Code's own official-marketplace bootstrap
+on a fresh profile, so it's now fully uninstalled rather than just
+disabled). Each costs real time and disk (or an auth step, or clutters
 `/context` with tool defs) if added unnecessarily, and each has a genuine
 "maybe I do want this" case (a project pinning an old Python via
 `.python-version`, a JetBrains IDE for a specific stack, actually using
-Tally forms, doing Vercel-specific work). If an agent is driving this
-restore, interview the user on these specifically before running the
-corresponding install/add command -- don't infer the
-answer from
-"everything else in the repo gets installed."
+Tally forms or Linear/Lucid, doing Vercel-specific work). If an agent is
+driving this restore, interview the user on these specifically before
+running the corresponding install/add command -- don't infer the answer
+from "everything else in the repo gets installed."
 
 1. **Install prerequisites**: Homebrew, then `brew install gh` (git credential
    helper) and whatever else this machine's `brew leaves`/`brew list --cask`
@@ -128,13 +134,58 @@ answer from
    ~/.gitconfig.local` and fill in the real `includeIf` block. `.gitconfig`
    includes this file unconditionally; git silently skips it if absent, so
    personal machines with no client work need to do nothing here.
-7. **Per-org Claude Code auth**, if any work directory needs a subscription
-   other than the default keychain login: from inside `~/Work/<org>`, run
-   `claude setup-token`, then add the result to `~/.zprofile.local` as
-   `export CLAUDE_<ORG>_OAUTH_TOKEN="..."` (org name uppercased, dashes to
-   underscores -- `.zshrc`'s `chpwd` hook derives the exact name from the
-   directory automatically, nothing to edit there). No token set means that
-   directory just keeps using the default login.
+7. **Per-org Claude Code auth**, if any work directory needs a full separate
+   subscription/account rather than the default keychain login. Claude Code
+   hashes `CLAUDE_CONFIG_DIR` into a distinct macOS Keychain entry, so
+   pointing it at a separate directory gives a fully separate, full-featured
+   account -- not a scoped token. (`claude setup-token` /
+   `CLAUDE_CODE_OAUTH_TOKEN` looked like the obvious lever here but turned
+   out to be a scoped credential that silently drops feature access
+   (confirmed: no Fable model access) and can't even be checked --
+   `claude auth status` doesn't validate a token against the server -- so
+   it's deliberately not used for this.) `.zshrc`'s `chpwd` hook switches
+   `CLAUDE_CONFIG_DIR` automatically whenever you're under `~/Work/<org>`
+   once the profile directory below exists; no profile directory means that
+   org just keeps using the default login, nothing else to edit.
+
+   A `CLAUDE_CONFIG_DIR` only isolates the login itself -- shared config
+   (skills/hooks/`CLAUDE.md`/`RTK.md`/settings) needs linking there too, same
+   as a fresh Mac's default profile does in step 3. Plugins and MCP
+   registrations are Claude Code's own per-profile state, not repo content,
+   and deliberately stay separate per org too -- `enabledPlugins` in
+   `settings.json` merging in doesn't install anything (same caveat as step
+   10), and installing a plugin under one profile must not make it appear in
+   another, so each org gets its own independent installs. Full recipe for a
+   new org profile (`<org>` = lowercased directory name under `~/Work`):
+   ```
+   mkdir -p ~/.claude-<org>
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login
+   python3 .claude/skills/config-sync/scripts/sync.py --push
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add thedotmack/claude-mem
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add DietrichGebert/ponytail
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install claude-mem@thedotmack
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install ponytail@ponytail
+   ```
+   Skip the marketplace/install block if this org doesn't need
+   claude-mem/ponytail. If it needs `tally`/`linear`/`lucid` MCP too, repeat
+   the commands in step 9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>`
+   prefix -- also per profile, for the same reason.
+
+   Cosmetic side effect: `claude doctor` on this new profile will report
+   "native installation but config install method is 'not set'" -- the
+   native installer only stamps `installMethod` into the default
+   `~/.claude/.claude.json`, never into a fresh profile's own
+   `<profile>/.claude.json`. Affects auto-update detection messaging only,
+   nothing functional. Fix if it bothers you:
+   ```
+   python3 -c "
+   import json
+   p = '<profile-dir>/.claude.json'
+   d = json.load(open(p))
+   d['installMethod'] = 'native'
+   json.dump(d, open(p, 'w'), indent=2)
+   "
+   ```
 8. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
 9. **`tally` MCP is optional, not default -- ask before adding it.** Like
    pyenv and JetBrains, don't assume it's wanted just because it's
@@ -151,6 +202,19 @@ answer from
    authorize `tally` there. Left un-added (or added and left
    unauthenticated), it just shows as disabled in `/mcp` -- harmless
    either way, no need to remove it if you change your mind later.
+
+   **`linear`/`lucid` MCP servers are optional too, same treatment.** Reused
+   across work orgs rather than tied to one client, so they don't belong in
+   any single org's project-local `.mcp.json` -- register them at user scope
+   instead:
+   ```
+   claude mcp add --transport http linear https://mcp.linear.app/mcp --scope user
+   claude mcp add --transport http lucid https://mcp.lucid.app/mcp --scope user
+   ```
+   `--scope user` is itself scoped to whichever `CLAUDE_CONFIG_DIR` is active
+   when the command runs -- if a work org has its own profile (step 7),
+   repeat both commands with `CLAUDE_CONFIG_DIR=~/.claude-<org>` prefixed to
+   register them there too.
 10. **Register and install the Claude Code plugins.** `enabledPlugins`
     and `extraKnownMarketplaces` in `.claude/user/settings.json` only
     *declare* that `claude-mem` and `ponytail` should be on -- restore's

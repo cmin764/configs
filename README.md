@@ -28,10 +28,10 @@ python3 .claude/skills/config-sync/scripts/sync.py --restore
 Then fill in `~/.zprofile.local` with real API keys (the six names are
 commented in `.zprofile`) and, if this machine does client work under a
 different git email, `cp .gitconfig-local.example ~/.gitconfig.local` and fill
-that in too. A `~/Work/<org>` directory needing its own Claude Code
-subscription instead of the default login gets a `CLAUDE_<ORG>_OAUTH_TOKEN`
-in `~/.zprofile.local` the same way -- see `.zshrc`'s comments or the full
-restore order, including iTerm2 and the one MCP server:
+that in too. A `~/Work/<org>` directory needing its own full Claude Code
+account instead of the default login gets a `~/.claude-<org>` profile
+directory with its own browser login -- see `.zshrc`'s comments or the full
+restore order, including iTerm2 and the optional MCP servers:
 `.claude/skills/config-sync/SKILL.md`, or just ask Claude Code to run
 `/config-sync` once it's installed.
 
@@ -68,4 +68,10 @@ stays a human-in-the-loop step in the skill, not something CI enforces.
 
 Promoting a skill from a project repo into `.claude/skills/` here is a
 separate, occasional decision -- worth doing when something proves reusable
-across projects, not something to automate into the sync loop.
+across projects, not something to automate into the sync loop. Skills that
+live here are personal, user-authored tooling and stay identical across
+every Claude Code account this machine logs into (personal, any per-org
+profile -- see `config-sync`'s restore step 7); that's different from a
+project's own `.claude/skills/`, which a team shares through that project's
+git history and Claude Code discovers per-project regardless of which
+account is active.

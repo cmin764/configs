@@ -41,28 +41,26 @@ fi
 # Claude Code — disable auto-update; run `claude update` manually to upgrade
 export DISABLE_AUTOUPDATER=1
 
-# Claude Code — swap only the login per ~/Work/<org> dir, everything else
-# (settings.json, plugins, hooks, skills) stays the shared ~/.claude config.
-# Default is the keychain login (`claude auth login`) for everything,
-# personal repos included. An org only deviates from that norm once its own
-# CLAUDE_<ORG>_OAUTH_TOKEN (dashes -> underscores, uppercased) is set in
-# ~/.zprofile.local (gitignored -- never put a real token in this file,
-# it's a public repo). To add one: `claude setup-token`, save the result
-# under that name, nothing else to edit here.
-_claude_oauth_token_by_pwd() {
+# Claude Code — swap the whole config dir (and with it, the Keychain-backed
+# login) per ~/Work/<org> dir. Falls back to the default ~/.claude login when
+# no ~/.claude-<org> profile exists yet -- nothing to set up for personal
+# repos or orgs that don't need a separate account.
+# To add one: `mkdir -p ~/.claude-<org>`, then
+# `CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login` (real browser OAuth,
+# full feature access), then `sync.py --push` to link in shared skills/hooks.
+_claude_config_dir_by_pwd() {
     case "$PWD" in
         "$HOME"/Work/*)
             local rest="${PWD#$HOME/Work/}"
             local org="${rest%%/*}"
-            local varname="CLAUDE_${(U)org//-/_}_OAUTH_TOKEN"
-            local token="${(P)varname}"
-            [ -n "$token" ] && export CLAUDE_CODE_OAUTH_TOKEN="$token" || unset CLAUDE_CODE_OAUTH_TOKEN
+            local dir="$HOME/.claude-${(L)org}"
+            [ -d "$dir" ] && export CLAUDE_CONFIG_DIR="$dir" || unset CLAUDE_CONFIG_DIR
             ;;
         *)
-            unset CLAUDE_CODE_OAUTH_TOKEN
+            unset CLAUDE_CONFIG_DIR
             ;;
     esac
 }
 autoload -Uz add-zsh-hook
-add-zsh-hook chpwd _claude_oauth_token_by_pwd
-_claude_oauth_token_by_pwd
+add-zsh-hook chpwd _claude_config_dir_by_pwd
+_claude_config_dir_by_pwd
