@@ -92,5 +92,8 @@ http-client.private.env.json
 .claude/worktrees/
 .claude/settings.local.json
 
+# Codex-flavored mirror of .claude/skills/, auto-generated
+.agents/
+
 # Mac junk
 .DS_Store
