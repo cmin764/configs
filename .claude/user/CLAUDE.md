@@ -56,7 +56,7 @@ Directness serves clarity, not ego.
 ## Git & Collaboration
 
 - Do not commit unless explicitly asked. Always ask for pre-approval; commit autonomously only with explicit session permission.
-- Commit messages and PRs: short, plain, direct. No detailed descriptions, no co-authored-by signatures involving Claude, no AI filler. Written like a developer at a keyboard, not a generated summary.
+- Commit messages and PRs: short, plain, direct. No detailed descriptions, no co-authored-by signatures involving Claude, no "Generated with Claude Code" or similar tool-attribution footers/badges (in the commit body, the PR body, or PR comments), no AI filler. Written like a developer at a keyboard, not a generated summary. `attribution: {commit: "", pr: ""}` in settings.json is the harness-level switch for this; this rule is the explicit backstop when a footer gets typed by hand instead of auto-inserted.
 - Ask permission before posting comments to GitHub PRs via `gh api`. Show draft content and target (PR number, comment ID) before posting.
 - Check the project's own CLAUDE.md/AGENTS.md for PR conventions first; only fall back to the rules below when the project is silent on them.
 - PR descriptions: why the change is needed, then the value it brings. Skip the changeset walkthrough, the diff already shows that. Add a short ToDo checklist of risks/regressions to watch and what to check visually and behaviorally. Whole thing readable in under a minute, keep it short.
