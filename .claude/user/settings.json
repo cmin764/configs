@@ -14,7 +14,9 @@
       "Bash(gh pr merge:*)",
       "Bash(terraform apply:*)",
       "Bash(terraform destroy:*)",
-      "Read(**/.env)"
+      "Read(**/.env)",
+      "Read(**/.zprofile.local)",
+      "Read(**/.ssh/id_*)"
     ]
   },
   "autoMode": {
