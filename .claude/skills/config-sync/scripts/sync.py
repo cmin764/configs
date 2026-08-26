@@ -35,8 +35,8 @@ SYMLINKS = [
     (".claude/skills", "~/.claude/skills"),
 ]
 
-ITERM2_DST_REL = "apps/iterm2/Driftware.json"
-ITERM2_DST = "~/Library/Application Support/iTerm2/DynamicProfiles/Driftware.json"
+ITERM2_DST_REL = "apps/iterm2/Wandercode.json"
+ITERM2_DST = "~/Library/Application Support/iTerm2/DynamicProfiles/Wandercode.json"
 
 # Files the owning app rewrites, so a plain copy in the direction it's used.
 # iTerm2 is handled separately by sync_iterm2 (its repo copy is re-extracted
@@ -270,9 +270,9 @@ def sync_iterm2(mode):
         if not profiles:
             print("  skip iterm2: no profiles in the local plist")
             return
-        profile = next((p for p in profiles if p.get("Name") == "Driftware"), None)
+        profile = next((p for p in profiles if p.get("Name") == "Wandercode"), None)
         if profile is None:
-            print("  skip iterm2: no profile named 'Driftware' in the local plist "
+            print("  skip iterm2: no profile named 'Wandercode' in the local plist "
                   "-- rename your profile first, or this would overwrite the "
                   "template with the wrong one")
             return

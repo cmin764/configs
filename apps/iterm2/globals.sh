@@ -17,6 +17,10 @@ defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true
 defaults write com.googlecode.iterm2 AutoComposer -bool true
 defaults write com.googlecode.iterm2 AppleWindowTabbingMode -string manual
 
+# Make the Wandercode dynamic profile (apps/iterm2/Wandercode.json) the
+# default new-window/new-tab profile, matching its Guid.
+defaults write com.googlecode.iterm2 "Default Bookmark Guid" -string "D3F7A1B2-3C4D-4E5F-8A9B-0C1D2E3F4A5B"
+
 # ponytail: PointerActions (3-finger swipe gestures) is a nested plist dict,
 # not worth fighting `defaults write -dict` syntax for. Re-add by hand via
 # iTerm2 > Settings > Pointer if you miss the swipe-to-switch-window gesture.

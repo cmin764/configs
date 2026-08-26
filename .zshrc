@@ -1,7 +1,21 @@
 # Aliases
 alias brew-all="brew update && brew upgrade && brew cleanup && brew doctor"
 
+# Line editing: Fn+Left/Right (Home/End) and Option+Left/Right (word jump).
+# zsh's emacs keymap doesn't bind these out of the box -- iTerm2 sends the
+# terminfo Home/End sequence for Fn+arrows (application-keypad \eOH/\eOF on
+# this TERM, xterm-256color) and xterm's CSI modifier-arrow form for
+# Option+arrows (\e[1;3D / \e[1;3C, modifier code 3 = Option), neither of
+# which zsh's stock bindings recognize on their own.
+bindkey "${terminfo[khome]:-\eOH}" beginning-of-line
+bindkey "${terminfo[kend]:-\eOF}" end-of-line
+bindkey "\e[H" beginning-of-line   # normal (non-application) cursor mode fallback
+bindkey "\e[F" end-of-line
+bindkey "\e[1;3D" backward-word    # Option+Left
+bindkey "\e[1;3C" forward-word     # Option+Right
+
 # Completions — full rebuild once a day, cached otherwise
+[[ -d "$HOME/.docker/completions" ]] && fpath=("$HOME/.docker/completions" $fpath)
 autoload -Uz compinit
 if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
     compinit

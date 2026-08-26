@@ -4,6 +4,20 @@
 
 The PreToolUse hook in `~/.claude/settings.json` intercepts every Bash call and rewrites it transparently. You never need to type `rtk` manually except for the meta commands below.
 
+## Installation Verification
+
+```bash
+rtk --version         # Should show: rtk X.Y.Z
+rtk gain              # Should work (not "command not found")
+which rtk             # Verify correct binary
+```
+
+`rtk init --show` gives the same diagnostic in more detail (safe, read-only) --
+expect it to flag the global `CLAUDE.md` as "not configured" even when
+everything works, since it checks for a bare `@RTK.md` import and this
+repo uses `@~/.claude/RTK.md` instead; that mismatch is expected, not a
+problem.
+
 ## Meta Commands (always use rtk directly)
 
 ```bash
@@ -78,24 +92,29 @@ gh pr diff -- path/to/file.ts      # full diff for one file only when needed
 
 ## Name Collision Warning
 
-If `rtk gain` fails, you may have "Rust Type Kit" (a different `rtk` on crates.io) installed instead of this tool.
+If `rtk gain` fails, you may have `reachingforthejack/rtk` ("Rust Type Kit", a
+different `rtk` on crates.io) installed instead of this tool.
 
 ## Upgrading
 
-Currently on v0.45.0, installed to `~/.local/bin/rtk` via the official installer:
+Currently on v0.45.0. `which rtk` tells you which install owns the binary and where an upgrade
+needs to land: `brew upgrade rtk` for a Homebrew install (check `brew info rtk` for the bottled
+path, typically `/opt/homebrew/bin/rtk` on Apple Silicon), or the curl installer below for a
+`~/.local/bin/rtk` install (there's no `rtk update`/`self-update` subcommand either way -- check
+`rtk --version` against the latest GitHub release manually).
+
+`brew install rtk` (this tool is in `homebrew-core`) is the preferred path when a bottle covers
+your platform -- confirmed working on Apple Silicon (arm64, macOS Tahoe), seconds instead of a
+build. It was source-only there (pulling in `llvm`, a 30+ minute build) on the Intel machine this
+repo was previously bootstrapped on -- try `brew install rtk` first and only fall back to the
+installer script if it wants to build from source:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 ```
 
 It downloads the release tarball for your platform, verifies it against `checksums.txt`
-(SHA-256), and swaps the binary at `~/.local/bin/rtk`. There is no `rtk update`/`self-update`
-subcommand — check `rtk --version` against the latest GitHub release manually.
-
-`brew install rtk` also exists (this tool is in `homebrew-core`), but on this Mac it has no
-bottle for the installed macOS/Homebrew tier and falls back to building from source, pulling
-in `llvm` as a dependency (a 30+ minute build for a small CLI). Stick with the installer script
-above unless a future bottle covers this machine.
+(SHA-256), and swaps the binary at `~/.local/bin/rtk`.
 
 ## Fixed Bug — `git log` After a Merge (resolved in v0.42.0)
 
