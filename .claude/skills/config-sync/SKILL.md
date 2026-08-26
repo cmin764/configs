@@ -60,15 +60,16 @@ cruft. Everything else pulls automatically because it's either low-sensitivity
 
 Order matters; later steps assume earlier ones landed.
 
-**Two tools are optional, not default -- ask before installing them, don't
-just silently skip or silently include:** `pyenv` (step 13) and JetBrains
-Toolbox/any JetBrains IDE (step 12). Both cost real time and disk if
-installed unnecessarily, and both have a genuine "maybe I do want this"
-case (a project pinning an old Python via `.python-version`, a JetBrains IDE
-for a specific stack). If an agent is driving this restore, interview the
-user on these two specifically before running the corresponding install
-command -- don't infer the answer from "everything else in the repo gets
-installed."
+**Three things are optional, not default -- ask before installing/adding
+them, don't just silently skip or silently include:** `pyenv` (step 13),
+JetBrains Toolbox/any JetBrains IDE (step 12), and the `tally` MCP server
+(step 9). Each costs real time and disk (or an auth step) if added
+unnecessarily, and each has a genuine "maybe I do want this" case (a
+project pinning an old Python via `.python-version`, a JetBrains IDE for a
+specific stack, actually using Tally forms). If an agent is driving this
+restore, interview the user on these specifically before running the
+corresponding install/add command -- don't infer the answer from
+"everything else in the repo gets installed."
 
 1. **Install prerequisites**: Homebrew, then `brew install gh` (git credential
    helper) and whatever else this machine's `brew leaves`/`brew list --cask`
@@ -128,18 +129,21 @@ installed."
    directory automatically, nothing to edit there). No token set means that
    directory just keeps using the default login.
 8. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
-9. **`claude mcp add`** the one hand-added MCP server, **with `--scope user`**
-   -- the flag matters, `claude mcp add` defaults to `local` (scoped to
-   whatever directory you happen to run it from, i.e. this repo checkout),
-   which is not what you want for a server that should be usable from any
-   project:
+9. **`tally` MCP is optional, not default -- ask before adding it.** Like
+   pyenv and JetBrains, don't assume it's wanted just because it's
+   documented here. If it is:
    ```
    claude mcp add --transport http tally https://api.tally.so/mcp --scope user
    ```
-   No token needed at add time, but OAuth lives in the keychain of the
-   *previous* machine, not this one -- expect `claude mcp get tally` to show
-   "Needs authentication" on a fresh Mac. Finish it interactively: run
-   `/mcp` inside a Claude Code session and authorize `tally` there.
+   `--scope user` matters -- `claude mcp add` defaults to `local` (scoped to
+   whatever directory you happen to run it from, i.e. this repo checkout),
+   not usable from any project. No token needed at add time, but OAuth
+   lives in the keychain of the *previous* machine, not this one -- expect
+   `claude mcp get tally` to show "Needs authentication" on a fresh Mac.
+   Finish it interactively: run `/mcp` inside a Claude Code session and
+   authorize `tally` there. Left un-added (or added and left
+   unauthenticated), it just shows as disabled in `/mcp` -- harmless
+   either way, no need to remove it if you change your mind later.
 10. **Register and install the Claude Code plugins.** `enabledPlugins`
     and `extraKnownMarketplaces` in `.claude/user/settings.json` only
     *declare* that `claude-mem`, `ponytail`, and `vercel` should be on --
@@ -196,6 +200,15 @@ installed."
       open Cursor once and confirm it still resolves in the model picker;
       Cursor rotates model aliases over time and this repo doesn't track
       that automatically.
+    - Cursor's chat model picker (which models are toggled on/off) lives in
+      `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
+      (a SQLite DB, `cursor/initialModelState` key) -- app-accumulated
+      state, not a hand-edited config, so it's out of scope for this repo
+      per the scope rule (README.md) and doesn't sync. Toggle these on by
+      hand in Settings > Models, everything else off: **Cursor Grok 4.6,
+      Composer 2.5, GPT-5.6 Sol** (the pinned CLI model above), **Codex
+      5.3, Gemini 3.1 Pro**. `Auto` stays on regardless, it's not a model
+      choice.
     - `jetbrains-toolbox` (`.zprofile`'s `path+=(...)` entry for its
       `scripts/` dir is still there, harmless when the app isn't
       installed -- zsh doesn't error on a nonexistent PATH entry) is

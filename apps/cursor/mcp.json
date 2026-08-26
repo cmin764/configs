@@ -16,7 +16,7 @@
     "claude-mem": {
       "command": "node",
       "args": [
-        "$HOME/.claude/plugins/marketplaces/thedotmack/plugin/scripts/mcp-server.cjs"
+        "${env:HOME}/.claude/plugins/marketplaces/thedotmack/plugin/scripts/mcp-server.cjs"
       ]
     },
     "github": {
