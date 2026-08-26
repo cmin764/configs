@@ -170,6 +170,22 @@ from "everything else in the repo gets installed."
    claude-mem/ponytail. If it needs `tally`/`linear`/`lucid` MCP too, repeat
    the commands in step 9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>`
    prefix -- also per profile, for the same reason.
+
+   Cosmetic side effect: `claude doctor` on this new profile will report
+   "native installation but config install method is 'not set'" -- the
+   native installer only stamps `installMethod` into the default
+   `~/.claude/.claude.json`, never into a fresh profile's own
+   `<profile>/.claude.json`. Affects auto-update detection messaging only,
+   nothing functional. Fix if it bothers you:
+   ```
+   python3 -c "
+   import json
+   p = '<profile-dir>/.claude.json'
+   d = json.load(open(p))
+   d['installMethod'] = 'native'
+   json.dump(d, open(p, 'w'), indent=2)
+   "
+   ```
 8. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
 9. **`tally` MCP is optional, not default -- ask before adding it.** Like
    pyenv and JetBrains, don't assume it's wanted just because it's
