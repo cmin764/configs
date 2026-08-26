@@ -349,9 +349,12 @@ def _prune_claude_chats(days: int, dry_run: bool) -> int:
         return 0
     cutoff = time.time() - days * 86400
     total = 0
+    resolved_root = projects_dir.resolve()
     for project in projects_dir.iterdir():
         if not project.is_dir():
             continue
+        if not project.resolve().is_relative_to(resolved_root):
+            continue  # symlink escaping the projects tree, never follow it
         for entry in project.glob("*.jsonl"):
             try:
                 if entry.stat().st_mtime >= cutoff:
@@ -398,6 +401,54 @@ def _clean_claude_tmp(dry_run: bool) -> int:
 # Main
 # ---------------------------------------------------------------------------
 
+def _selftest() -> None:
+    import tempfile
+
+    # _positive_int: negative ages must be rejected, zero/positive accepted.
+    try:
+        _positive_int("-1")
+        raise AssertionError("_positive_int accepted a negative value")
+    except argparse.ArgumentTypeError:
+        pass
+    assert _positive_int("0") == 0
+    assert _positive_int("30") == 30
+
+    # _prune_claude_chats: a project dir symlinked outside ~/.claude/projects
+    # must never be traversed, even if it holds stale-looking .jsonl files.
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        old_file = outside / "session.jsonl"
+        old_file.write_text("{}")
+        os.utime(old_file, (0, 0))  # far in the past, would match any cutoff
+
+        projects_dir = tmp_path / ".claude" / "projects"
+        projects_dir.mkdir(parents=True)
+        (projects_dir / "escape-link").symlink_to(outside)
+
+        global HOME
+        real_home = HOME
+        HOME = tmp_path
+        try:
+            freed = _prune_claude_chats(days=1, dry_run=True)
+        finally:
+            HOME = real_home
+        assert freed == 0, "symlinked project dir was followed outside the tree"
+        assert old_file.exists(), "file outside the projects tree was touched"
+
+    print("selftest ok")
+
+
+def _positive_int(value: str) -> int:
+    """Argparse type: rejects negative ages, which flip the cutoff into the
+    future and make every file look stale (see --selftest)."""
+    n = int(value)
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {n}")
+    return n
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Mac disk cleanup — dry-run by default.",
@@ -417,9 +468,11 @@ def parse_args() -> argparse.Namespace:
                    help="Skip all interactive confirmation prompts")
     p.add_argument("--json", action="store_true", dest="json_out",
                    help="Output machine-readable JSON")
-    p.add_argument("--chats-older-than", type=int, default=30, metavar="DAYS",
+    p.add_argument("--selftest", action="store_true",
+                   help="Run internal self-checks and exit (handled in main() before parsing)")
+    p.add_argument("--chats-older-than", type=_positive_int, default=30, metavar="DAYS",
                    help="Age threshold for Claude chat pruning (default: 30)")
-    p.add_argument("--stale-days", type=int, default=30, metavar="DAYS",
+    p.add_argument("--stale-days", type=_positive_int, default=30, metavar="DAYS",
                    help="Age threshold for stale node_modules (default: 30)")
     p.add_argument("--work-dir", type=str, default="", metavar="DIR",
                    help="Directory to scan for stale node_modules (default: auto-detect "
@@ -620,6 +673,10 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
 
 
 def main() -> None:
+    if "--selftest" in sys.argv[1:]:
+        _selftest()
+        return
+
     args = parse_args()
     dry_run = not args.apply
 
