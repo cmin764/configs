@@ -19,9 +19,10 @@ order on a bare machine.
 
 | Kind | Files | Why |
 |---|---|---|
-| **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global`, `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/`, `.claude/skills/` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
+| **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
+| **Symlink (per Claude profile)** | `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/`, `.claude/skills/` | Same as above, but applied once per Claude Code profile directory: `~/.claude` plus any `~/.claude-<org>` created for per-org account isolation (see restore step 7). A fresh Mac only has `~/.claude`. |
 | **Copy** | `apps/cursor/settings.json`, `apps/cursor/mcp.json`, `apps/sublime/*`, `apps/docker/daemon.json`, `apps/iterm2/Wandercode.json` | The owning app rewrites its own file, so a symlink would let app noise flow straight into a public repo. Plain overwrite either direction is safe: these files carry no secrets. |
-| **Merge** | `.claude/user/settings.json` (installs to `~/.claude/settings.json`) | Claude Code itself writes to this file (permission grants, plugin state). A plain copy on push would erase legitimate accumulated state; a plain copy on pull would drag that noise into the repo. Deep-merge, repo wins on conflicts, machine-only keys survive a push. |
+| **Merge (per Claude profile)** | `.claude/user/settings.json` (installs to `<profile>/settings.json`) | Claude Code itself writes to this file (permission grants, plugin state). A plain copy on push would erase legitimate accumulated state; a plain copy on pull would drag that noise into the repo. Deep-merge, repo wins on conflicts, machine-only keys survive a push. Applied per profile, same set as the symlinks above. |
 
 One file needs a fourth treatment: `apps/cursor/cli-config.json` carries
 `authInfo` (email, userId, teamId) on the live machine that must never reach a
@@ -48,7 +49,7 @@ All four are idempotent. `--status` never writes anything; run it first.
 
 ## What `--pull` deliberately refuses to automate
 
-`--pull` never auto-merges `~/.claude/settings.json` back into the repo template.
+`--pull` never auto-merges a Claude profile's `settings.json` back into the repo template.
 That file accumulates permission grants and `autoMode.environment` blocks the
 harness writes on its own (that's exactly the noise the template was built to
 strip out). It prints a diff instead, one dotted path per difference, so a human
@@ -60,23 +61,22 @@ cruft. Everything else pulls automatically because it's either low-sensitivity
 
 Order matters; later steps assume earlier ones landed.
 
-**Four things are optional, not default -- ask before installing/adding
+**Five things are optional, not default -- ask before installing/adding
 them, don't just silently skip or silently include:** `pyenv` (step 13),
-JetBrains Toolbox/any JetBrains IDE (step 12), the `tally` MCP server
-(step 9), and the `vercel` plugin (step 10 -- `enabledPlugins` reads
-`false` for it in `.claude/user/settings.json` on purpose, and step 10
-doesn't install it either; rarely used, skip it entirely on a fresh
-restore and install it fresh with `claude plugin install
-vercel@claude-plugins-official` on the rare occasion it's actually
+JetBrains Toolbox/any JetBrains IDE (step 12), the `tally` MCP server and
+the `linear`/`lucid` MCP servers (step 9), and the `vercel` plugin (step 10
+-- `enabledPlugins` reads `false` for it in `.claude/user/settings.json` on
+purpose, and step 10 doesn't install it either; rarely used, skip it
+entirely on a fresh restore and install it fresh with `claude plugin
+install vercel@claude-plugins-official` on the rare occasion it's actually
 needed). Each costs real time and disk (or an auth step, or clutters
 `/context` with tool defs) if added unnecessarily, and each has a genuine
 "maybe I do want this" case (a project pinning an old Python via
 `.python-version`, a JetBrains IDE for a specific stack, actually using
-Tally forms, doing Vercel-specific work). If an agent is driving this
-restore, interview the user on these specifically before running the
-corresponding install/add command -- don't infer the
-answer from
-"everything else in the repo gets installed."
+Tally forms or Linear/Lucid, doing Vercel-specific work). If an agent is
+driving this restore, interview the user on these specifically before
+running the corresponding install/add command -- don't infer the answer
+from "everything else in the repo gets installed."
 
 1. **Install prerequisites**: Homebrew, then `brew install gh` (git credential
    helper) and whatever else this machine's `brew leaves`/`brew list --cask`
@@ -128,13 +128,22 @@ answer from
    ~/.gitconfig.local` and fill in the real `includeIf` block. `.gitconfig`
    includes this file unconditionally; git silently skips it if absent, so
    personal machines with no client work need to do nothing here.
-7. **Per-org Claude Code auth**, if any work directory needs a subscription
-   other than the default keychain login: from inside `~/Work/<org>`, run
-   `claude setup-token`, then add the result to `~/.zprofile.local` as
-   `export CLAUDE_<ORG>_OAUTH_TOKEN="..."` (org name uppercased, dashes to
-   underscores -- `.zshrc`'s `chpwd` hook derives the exact name from the
-   directory automatically, nothing to edit there). No token set means that
-   directory just keeps using the default login.
+7. **Per-org Claude Code auth**, if any work directory needs a full separate
+   subscription/account rather than the default keychain login: `mkdir -p
+   ~/.claude-<org>` (org name lowercased, dashes kept), then
+   `CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login` for a real browser
+   OAuth login. Claude Code hashes `CLAUDE_CONFIG_DIR` into a distinct macOS
+   Keychain entry, so this is a fully separate, full-featured account, not a
+   scoped token -- `claude setup-token` / `CLAUDE_CODE_OAUTH_TOKEN` looked
+   like the obvious lever here but turned out to be a scoped credential that
+   silently drops feature access (confirmed: no Fable model access), so it's
+   deliberately not used for this. Run `sync.py --push` once afterward to
+   link the new profile's shared skills/hooks/settings in from the repo (see
+   "The three ways a file is kept in sync" above -- Claude profile dirs get
+   the same symlink/merge treatment as `~/.claude`, applied per profile).
+   `.zshrc`'s `chpwd` hook then switches `CLAUDE_CONFIG_DIR` automatically
+   whenever you're under `~/Work/<org>`, nothing to edit there. No profile
+   directory means that org just keeps using the default login.
 8. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
 9. **`tally` MCP is optional, not default -- ask before adding it.** Like
    pyenv and JetBrains, don't assume it's wanted just because it's
@@ -151,6 +160,19 @@ answer from
    authorize `tally` there. Left un-added (or added and left
    unauthenticated), it just shows as disabled in `/mcp` -- harmless
    either way, no need to remove it if you change your mind later.
+
+   **`linear`/`lucid` MCP servers are optional too, same treatment.** Reused
+   across work orgs rather than tied to one client, so they don't belong in
+   any single org's project-local `.mcp.json` -- register them at user scope
+   instead:
+   ```
+   claude mcp add --transport http linear https://mcp.linear.app/mcp --scope user
+   claude mcp add --transport http lucid https://mcp.lucid.app/mcp --scope user
+   ```
+   `--scope user` is itself scoped to whichever `CLAUDE_CONFIG_DIR` is active
+   when the command runs -- if a work org has its own profile (step 7),
+   repeat both commands with `CLAUDE_CONFIG_DIR=~/.claude-<org>` prefixed to
+   register them there too.
 10. **Register and install the Claude Code plugins.** `enabledPlugins`
     and `extraKnownMarketplaces` in `.claude/user/settings.json` only
     *declare* that `claude-mem` and `ponytail` should be on -- restore's

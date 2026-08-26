@@ -28,10 +28,10 @@ python3 .claude/skills/config-sync/scripts/sync.py --restore
 Then fill in `~/.zprofile.local` with real API keys (the six names are
 commented in `.zprofile`) and, if this machine does client work under a
 different git email, `cp .gitconfig-local.example ~/.gitconfig.local` and fill
-that in too. A `~/Work/<org>` directory needing its own Claude Code
-subscription instead of the default login gets a `CLAUDE_<ORG>_OAUTH_TOKEN`
-in `~/.zprofile.local` the same way -- see `.zshrc`'s comments or the full
-restore order, including iTerm2 and the one MCP server:
+that in too. A `~/Work/<org>` directory needing its own full Claude Code
+account instead of the default login gets a `~/.claude-<org>` profile
+directory with its own browser login -- see `.zshrc`'s comments or the full
+restore order, including iTerm2 and the optional MCP servers:
 `.claude/skills/config-sync/SKILL.md`, or just ask Claude Code to run
 `/config-sync` once it's installed.
 
