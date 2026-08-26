@@ -60,15 +60,20 @@ cruft. Everything else pulls automatically because it's either low-sensitivity
 
 Order matters; later steps assume earlier ones landed.
 
-**Three things are optional, not default -- ask before installing/adding
-them, don't just silently skip or silently include:** `pyenv` (step 13),
-JetBrains Toolbox/any JetBrains IDE (step 12), and the `tally` MCP server
-(step 9). Each costs real time and disk (or an auth step) if added
-unnecessarily, and each has a genuine "maybe I do want this" case (a
-project pinning an old Python via `.python-version`, a JetBrains IDE for a
-specific stack, actually using Tally forms). If an agent is driving this
-restore, interview the user on these specifically before running the
-corresponding install/add command -- don't infer the answer from
+**Four things are optional, not default -- ask before installing/adding/
+enabling them, don't just silently skip or silently include:** `pyenv`
+(step 13), JetBrains Toolbox/any JetBrains IDE (step 12), the `tally` MCP
+server (step 9), and the `vercel` plugin (step 10 -- `enabledPlugins` reads
+`false` for it in `.claude/user/settings.json` on purpose; rarely used,
+install it but leave it disabled, `claude plugin enable vercel@claude-plugins-official`
+turns it on when actually needed). Each costs real time and disk (or an
+auth step, or clutters `/context` with tool defs) if added unnecessarily,
+and each has a genuine "maybe I do want this" case (a project pinning an
+old Python via `.python-version`, a JetBrains IDE for a specific stack,
+actually using Tally forms, doing Vercel-specific work). If an agent is
+driving this restore, interview the user on these specifically before
+running the corresponding install/add/enable command -- don't infer the
+answer from
 "everything else in the repo gets installed."
 
 1. **Install prerequisites**: Homebrew, then `brew install gh` (git credential
@@ -146,25 +151,15 @@ corresponding install/add command -- don't infer the answer from
    either way, no need to remove it if you change your mind later.
 10. **Register and install the Claude Code plugins.** `enabledPlugins`
     and `extraKnownMarketplaces` in `.claude/user/settings.json` only
-    *declare* that `claude-mem`, `ponytail`, and `vercel` should be on --
-    restore's merge step does not actually fetch or install them. Do it by
-    hand:
+    *declare* that `claude-mem` and `ponytail` should be on -- restore's
+    merge step does not actually fetch or install them. Do it by hand:
     ```
     claude plugin marketplace add thedotmack/claude-mem
     claude plugin marketplace add DietrichGebert/ponytail
     claude plugin install claude-mem@thedotmack
     claude plugin install ponytail@ponytail
-    claude plugin install vercel@claude-plugins-official
     ```
-    `vercel` ships from `claude-plugins-official`, a marketplace Claude Code
-    already knows about -- no `marketplace add` step needed for it, just the
-    install. `claude plugin install` flips its own `enabledPlugins` entry to
-    `true` in `~/.claude/settings.json` as a side effect; that's expected,
-    not drift -- `.claude/user/settings.json` in the repo should already
-    read `true` for it, since installing it here does the same via the
-    merge on the next `--push`.
-
-    `claude plugin list` should then show all three as `enabled`. Two more
+    `claude plugin list` should then show both as `enabled`. Two more
     things worth knowing before expecting the statusline badges to go
     green:
     - **claude-mem's hooks need a JS runtime already on `PATH`** (its
