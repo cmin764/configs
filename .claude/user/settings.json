@@ -5,7 +5,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash \"~/.claude/plugins/cache/ponytail/ponytail/4.8.4/hooks/ponytail-statusline.sh\""
+    "command": "bash ~/.claude/hooks/statusline.sh"
   },
   "permissions": {
     "defaultMode": "auto",
