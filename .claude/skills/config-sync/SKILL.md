@@ -151,11 +151,76 @@ Order matters; later steps assume earlier ones landed.
    autocompletes (proves the skills symlink worked) and `/status` shows
    `autoMode` active (it's a user-scope key, dead if the settings file ever
    ends up back at project scope).
+12. **GUI apps**, `brew install --cask` for each, one at a time, config file
+    validated (diff against `apps/<tool>/`) before moving to the next:
+    ```
+    brew install --cask cursor
+    brew install --cask sublime-text
+    brew install --cask docker
+    ```
+    - `docker` needs `sudo` for `docker-credential-osxkeychain` under
+      `/usr/local/bin` -- it prompts for a password interactively, so this
+      one can't run unattended/non-interactively.
+    - Cursor's `apps/cursor/cli-config.json` pins a specific `modelId` --
+      open Cursor once and confirm it still resolves in the model picker;
+      Cursor rotates model aliases over time and this repo doesn't track
+      that automatically.
+    - `jetbrains-toolbox` (`.zprofile`'s `path+=(...)` entry for its
+      `scripts/` dir is still there, harmless when the app isn't
+      installed -- zsh doesn't error on a nonexistent PATH entry) is
+      **not** part of the default install; only add it when a JetBrains
+      IDE is actually needed. It needs one manual launch-and-click-through
+      before `~/Library/Application Support/JetBrains/Toolbox/scripts`
+      exists, which is what that PATH entry points at.
+13. **Dev toolchains**, in any order, `pyenv` deliberately excluded (this
+    repo's Python workflow is `uv`-only; both `.zprofile` and `.zshrc` guard
+    their pyenv lines behind existence checks, so skipping it causes no
+    shell errors):
+    ```
+    brew install openjdk go nvm uv
+    ```
+    Then, since `nvm`'s formula doesn't manage a Node version for you:
+    ```
+    nvm install --lts
+    ```
+    watch its own log line ("Now using node ...") land, not just the exit
+    code -- in one fresh shell run `nvm install --lts`, in the *next* fresh
+    shell confirm `node --version`/`npm --version`, since nvm's default-alias
+    autoload only applies to shells started after the install.
+    For Bun, use the official installer, **not** `brew install bun`
+    (`.zprofile`/`.zshrc` already export `BUN_INSTALL`/`PATH` and source
+    `~/.bun/_bun` completions):
+    ```
+    curl -fsSL https://bun.sh/install | bash
+    ```
+    Its installer appends its own `BUN_INSTALL`/PATH/completions block
+    straight to `~/.zshrc` -- which is a symlink into this repo. That block
+    is 100% redundant with what's already there, and it hardcodes an
+    absolute `/Users/<you>/.bun/_bun` path (exactly what CI's
+    hardcoded-path check flags). Check `git status` in this repo right
+    after running the installer and `git checkout -- .zshrc` if it added
+    anything.
+    Verify all five in a **login + interactive** shell (`zsh -li -c
+    '...'`, matching how a real terminal window starts) -- a plain
+    `zsh -l` won't source `.zshrc` (nvm/bun live partly there) and a plain
+    `zsh -i` won't source `.zprofile` (Java/Go/Bun's PATH exports live
+    there), so testing with only one or the other gives false negatives.
+14. **Restart Claude Code once** after step 13. The MCP servers and plugin
+    hooks that shell out to `node` (claude-mem's MCP entry, its `SessionStart`
+    worker spawn) were resolved against whatever `PATH` the *currently
+    running* Claude Code session started with -- if that session predates
+    the toolchain install, `claude mcp list` and the statusline's `[MEM]`
+    badge will look broken even though everything is actually fine. A fresh
+    session picks up the new `PATH`.
 
 ## Apple Silicon vs Intel
 
-This repo was last rebuilt on an Intel Mac (`/usr/local` brew prefix). `.zprofile`
-handles both prefixes. If something still assumes `/usr/local`, that's a bug --
+Originally bootstrapped on an Intel Mac (`/usr/local` brew prefix); validated
+end-to-end on Apple Silicon (`/opt/homebrew` prefix) during the Wandercode
+restore. `.zprofile` handles both prefixes, and `brew install rtk` in
+particular now bottles cleanly on Apple Silicon (seconds) where it used to
+fall back to a 30+ minute source build on the Intel machine -- see `RTK.md`.
+If something still assumes `/usr/local` unconditionally, that's a bug --
 grep the repo for the literal string and fix it rather than adding a third
 special case.
 
