@@ -38,5 +38,5 @@
   },
   "approvalMode": "allowlist",
   "sandbox": { "mode": "disabled", "networkAccess": "user_config_with_defaults" },
-  "attribution": { "attributeCommitsToAgent": true, "attributePRsToAgent": true }
+  "attribution": { "attributeCommitsToAgent": false, "attributePRsToAgent": false }
 }
