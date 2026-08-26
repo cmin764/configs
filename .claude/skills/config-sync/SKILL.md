@@ -20,7 +20,7 @@ order on a bare machine.
 | Kind | Files | Why |
 |---|---|---|
 | **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global`, `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/`, `.claude/skills/` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
-| **Copy** | `apps/cursor/settings.json`, `apps/cursor/mcp.json`, `apps/sublime/*`, `apps/docker/daemon.json`, `apps/iterm2/Driftware.json` | The owning app rewrites its own file, so a symlink would let app noise flow straight into a public repo. Plain overwrite either direction is safe: these files carry no secrets. |
+| **Copy** | `apps/cursor/settings.json`, `apps/cursor/mcp.json`, `apps/sublime/*`, `apps/docker/daemon.json`, `apps/iterm2/Wandercode.json` | The owning app rewrites its own file, so a symlink would let app noise flow straight into a public repo. Plain overwrite either direction is safe: these files carry no secrets. |
 | **Merge** | `.claude/user/settings.json` (installs to `~/.claude/settings.json`) | Claude Code itself writes to this file (permission grants, plugin state). A plain copy on push would erase legitimate accumulated state; a plain copy on pull would drag that noise into the repo. Deep-merge, repo wins on conflicts, machine-only keys survive a push. |
 
 One file needs a fourth treatment: `apps/cursor/cli-config.json` carries
@@ -28,7 +28,7 @@ One file needs a fourth treatment: `apps/cursor/cli-config.json` carries
 public repo. `sync.py` drops it (and the `*Cache` blocks) automatically when
 pulling; pushing writes the repo's already-clean version as-is.
 
-`apps/iterm2/Driftware.json` isn't copied from a file at all -- it's re-extracted
+`apps/iterm2/Wandercode.json` isn't copied from a file at all -- it's re-extracted
 from `~/Library/Preferences/com.googlecode.iterm2.plist` via `plistlib`, because
 that's a binary plist with ~1300 keys of Sparkle-updater and window-position
 junk mixed in. Pull re-exports just the one profile; push drops the extracted
