@@ -129,21 +129,39 @@ from "everything else in the repo gets installed."
    includes this file unconditionally; git silently skips it if absent, so
    personal machines with no client work need to do nothing here.
 7. **Per-org Claude Code auth**, if any work directory needs a full separate
-   subscription/account rather than the default keychain login: `mkdir -p
-   ~/.claude-<org>` (org name lowercased, dashes kept), then
-   `CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login` for a real browser
-   OAuth login. Claude Code hashes `CLAUDE_CONFIG_DIR` into a distinct macOS
-   Keychain entry, so this is a fully separate, full-featured account, not a
-   scoped token -- `claude setup-token` / `CLAUDE_CODE_OAUTH_TOKEN` looked
-   like the obvious lever here but turned out to be a scoped credential that
-   silently drops feature access (confirmed: no Fable model access), so it's
-   deliberately not used for this. Run `sync.py --push` once afterward to
-   link the new profile's shared skills/hooks/settings in from the repo (see
-   "The three ways a file is kept in sync" above -- Claude profile dirs get
-   the same symlink/merge treatment as `~/.claude`, applied per profile).
-   `.zshrc`'s `chpwd` hook then switches `CLAUDE_CONFIG_DIR` automatically
-   whenever you're under `~/Work/<org>`, nothing to edit there. No profile
-   directory means that org just keeps using the default login.
+   subscription/account rather than the default keychain login. Claude Code
+   hashes `CLAUDE_CONFIG_DIR` into a distinct macOS Keychain entry, so
+   pointing it at a separate directory gives a fully separate, full-featured
+   account -- not a scoped token. (`claude setup-token` /
+   `CLAUDE_CODE_OAUTH_TOKEN` looked like the obvious lever here but turned
+   out to be a scoped credential that silently drops feature access
+   (confirmed: no Fable model access) and can't even be checked --
+   `claude auth status` doesn't validate a token against the server -- so
+   it's deliberately not used for this.) `.zshrc`'s `chpwd` hook switches
+   `CLAUDE_CONFIG_DIR` automatically whenever you're under `~/Work/<org>`
+   once the profile directory below exists; no profile directory means that
+   org just keeps using the default login, nothing else to edit.
+
+   A `CLAUDE_CONFIG_DIR` only isolates the login itself -- shared config
+   (skills/hooks/`CLAUDE.md`/`RTK.md`/settings) and *installed* plugins are
+   both separate per profile and need to be linked/installed there too, same
+   as a fresh Mac's default profile does in steps 3 and 10. Full recipe for
+   a new org profile (`<org>` = lowercased directory name under `~/Work`):
+   ```
+   mkdir -p ~/.claude-<org>
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login
+   python3 .claude/skills/config-sync/scripts/sync.py --push   # links skills/hooks/CLAUDE.md/RTK.md, merges settings.json
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add thedotmack/claude-mem
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add DietrichGebert/ponytail
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install claude-mem@thedotmack
+   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install ponytail@ponytail
+   ```
+   `enabledPlugins` in `settings.json` only *declares* the plugins should be
+   on (that's what the merge in `sync.py --push` lands) -- it doesn't fetch
+   or install them, exactly like the caveat in step 10. Skip the
+   marketplace/install block if this org doesn't need claude-mem/ponytail.
+   If it needs `tally`/`linear`/`lucid` MCP too, repeat the commands in step
+   9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>` prefix.
 8. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
 9. **`tally` MCP is optional, not default -- ask before adding it.** Like
    pyenv and JetBrains, don't assume it's wanted just because it's
