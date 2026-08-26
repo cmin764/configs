@@ -60,19 +60,21 @@ cruft. Everything else pulls automatically because it's either low-sensitivity
 
 Order matters; later steps assume earlier ones landed.
 
-**Four things are optional, not default -- ask before installing/adding/
-enabling them, don't just silently skip or silently include:** `pyenv`
-(step 13), JetBrains Toolbox/any JetBrains IDE (step 12), the `tally` MCP
-server (step 9), and the `vercel` plugin (step 10 -- `enabledPlugins` reads
-`false` for it in `.claude/user/settings.json` on purpose; rarely used,
-install it but leave it disabled, `claude plugin enable vercel@claude-plugins-official`
-turns it on when actually needed). Each costs real time and disk (or an
-auth step, or clutters `/context` with tool defs) if added unnecessarily,
-and each has a genuine "maybe I do want this" case (a project pinning an
-old Python via `.python-version`, a JetBrains IDE for a specific stack,
-actually using Tally forms, doing Vercel-specific work). If an agent is
-driving this restore, interview the user on these specifically before
-running the corresponding install/add/enable command -- don't infer the
+**Four things are optional, not default -- ask before installing/adding
+them, don't just silently skip or silently include:** `pyenv` (step 13),
+JetBrains Toolbox/any JetBrains IDE (step 12), the `tally` MCP server
+(step 9), and the `vercel` plugin (step 10 -- `enabledPlugins` reads
+`false` for it in `.claude/user/settings.json` on purpose, and step 10
+doesn't install it either; rarely used, skip it entirely on a fresh
+restore and install it fresh with `claude plugin install
+vercel@claude-plugins-official` on the rare occasion it's actually
+needed). Each costs real time and disk (or an auth step, or clutters
+`/context` with tool defs) if added unnecessarily, and each has a genuine
+"maybe I do want this" case (a project pinning an old Python via
+`.python-version`, a JetBrains IDE for a specific stack, actually using
+Tally forms, doing Vercel-specific work). If an agent is driving this
+restore, interview the user on these specifically before running the
+corresponding install/add command -- don't infer the
 answer from
 "everything else in the repo gets installed."
 
