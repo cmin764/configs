@@ -48,6 +48,8 @@ export ENABLE_EXPERIMENTAL_MCP_CLI=true
 #   export GOOGLE_MAPS_API_KEY=""
 #   export TALLY_API_KEY=""
 #   export CAL_API_KEY=""
+#   export CLAUDE_RPM_AVALON_OAUTH_TOKEN=""  # `claude setup-token`, used under ~/Work/RPM-Avalon (see .zshrc)
+#   # any other ~/Work/<org> follows the same CLAUDE_<ORG>_OAUTH_TOKEN pattern
 # ponytail: a plaintext file is the floor. Move to `op run` / 1Password
 # CLI if these ever get shared or start rotating on a schedule.
 [ -f "$HOME/.zprofile.local" ] && source "$HOME/.zprofile.local"
