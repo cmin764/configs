@@ -140,17 +140,27 @@ installed."
    *previous* machine, not this one -- expect `claude mcp get tally` to show
    "Needs authentication" on a fresh Mac. Finish it interactively: run
    `/mcp` inside a Claude Code session and authorize `tally` there.
-10. **Register and install the two Claude Code plugins.** `enabledPlugins`
+10. **Register and install the Claude Code plugins.** `enabledPlugins`
     and `extraKnownMarketplaces` in `.claude/user/settings.json` only
-    *declare* that `claude-mem` and `ponytail` should be on -- restore's
-    merge step does not actually fetch or install them. Do it by hand:
+    *declare* that `claude-mem`, `ponytail`, and `vercel` should be on --
+    restore's merge step does not actually fetch or install them. Do it by
+    hand:
     ```
     claude plugin marketplace add thedotmack/claude-mem
     claude plugin marketplace add DietrichGebert/ponytail
     claude plugin install claude-mem@thedotmack
     claude plugin install ponytail@ponytail
+    claude plugin install vercel@claude-plugins-official
     ```
-    `claude plugin list` should then show both as `enabled`. Two more
+    `vercel` ships from `claude-plugins-official`, a marketplace Claude Code
+    already knows about -- no `marketplace add` step needed for it, just the
+    install. `claude plugin install` flips its own `enabledPlugins` entry to
+    `true` in `~/.claude/settings.json` as a side effect; that's expected,
+    not drift -- `.claude/user/settings.json` in the repo should already
+    read `true` for it, since installing it here does the same via the
+    merge on the next `--push`.
+
+    `claude plugin list` should then show all three as `enabled`. Two more
     things worth knowing before expecting the statusline badges to go
     green:
     - **claude-mem's hooks need a JS runtime already on `PATH`** (its
