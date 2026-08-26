@@ -107,11 +107,18 @@ Order matters; later steps assume earlier ones landed.
    directory automatically, nothing to edit there). No token set means that
    directory just keeps using the default login.
 8. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
-9. **`claude mcp add`** the one hand-added MCP server (no token needed, OAuth
-   lives in the keychain):
+9. **`claude mcp add`** the one hand-added MCP server, **with `--scope user`**
+   -- the flag matters, `claude mcp add` defaults to `local` (scoped to
+   whatever directory you happen to run it from, i.e. this repo checkout),
+   which is not what you want for a server that should be usable from any
+   project:
    ```
-   claude mcp add --transport http tally https://api.tally.so/mcp
+   claude mcp add --transport http tally https://api.tally.so/mcp --scope user
    ```
+   No token needed at add time, but OAuth lives in the keychain of the
+   *previous* machine, not this one -- expect `claude mcp get tally` to show
+   "Needs authentication" on a fresh Mac. Finish it interactively: run
+   `/mcp` inside a Claude Code session and authorize `tally` there.
 10. **Register and install the two Claude Code plugins.** `enabledPlugins`
     and `extraKnownMarketplaces` in `.claude/user/settings.json` only
     *declare* that `claude-mem` and `ponytail` should be on -- restore's
