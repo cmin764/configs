@@ -21,6 +21,7 @@ order on a bare machine.
 |---|---|---|
 | **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
 | **Symlink (per Claude profile)** | `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/`, `.claude/skills/` | Same as above, but applied once per Claude Code profile directory: `~/.claude` plus any `~/.claude-<org>` created for per-org account isolation (see restore step 7). A fresh Mac only has `~/.claude`. |
+| **Symlink (profile -> default profile)** | `plugins/` in each `~/.claude-<org>`, pointing at `~/.claude/plugins` | Not repo content -- installed plugin code and marketplace clones, machine-local only. Shared across profiles because plugin code doesn't depend on which account is logged in; avoids re-cloning/re-installing per org. |
 | **Copy** | `apps/cursor/settings.json`, `apps/cursor/mcp.json`, `apps/sublime/*`, `apps/docker/daemon.json`, `apps/iterm2/Wandercode.json` | The owning app rewrites its own file, so a symlink would let app noise flow straight into a public repo. Plain overwrite either direction is safe: these files carry no secrets. |
 | **Merge (per Claude profile)** | `.claude/user/settings.json` (installs to `<profile>/settings.json`) | Claude Code itself writes to this file (permission grants, plugin state). A plain copy on push would erase legitimate accumulated state; a plain copy on pull would drag that noise into the repo. Deep-merge, repo wins on conflicts, machine-only keys survive a push. Applied per profile, same set as the symlinks above. |
 
@@ -143,25 +144,30 @@ from "everything else in the repo gets installed."
    org just keeps using the default login, nothing else to edit.
 
    A `CLAUDE_CONFIG_DIR` only isolates the login itself -- shared config
-   (skills/hooks/`CLAUDE.md`/`RTK.md`/settings) and *installed* plugins are
-   both separate per profile and need to be linked/installed there too, same
-   as a fresh Mac's default profile does in steps 3 and 10. Full recipe for
-   a new org profile (`<org>` = lowercased directory name under `~/Work`):
+   (skills/hooks/`CLAUDE.md`/`RTK.md`/settings) needs linking there too, same
+   as a fresh Mac's default profile does in step 3. Full recipe for a new
+   org profile (`<org>` = lowercased directory name under `~/Work`):
    ```
    mkdir -p ~/.claude-<org>
    CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login
-   python3 .claude/skills/config-sync/scripts/sync.py --push   # links skills/hooks/CLAUDE.md/RTK.md, merges settings.json
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add thedotmack/claude-mem
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add DietrichGebert/ponytail
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install claude-mem@thedotmack
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install ponytail@ponytail
+   python3 .claude/skills/config-sync/scripts/sync.py --push
    ```
-   `enabledPlugins` in `settings.json` only *declares* the plugins should be
-   on (that's what the merge in `sync.py --push` lands) -- it doesn't fetch
-   or install them, exactly like the caveat in step 10. Skip the
-   marketplace/install block if this org doesn't need claude-mem/ponytail.
-   If it needs `tally`/`linear`/`lucid` MCP too, repeat the commands in step
-   9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>` prefix.
+   `--push` links skills/hooks/`CLAUDE.md`/`RTK.md`, merges `settings.json`,
+   *and* symlinks this profile's `plugins/` dir to `~/.claude/plugins` --
+   installed plugin code and marketplace clones aren't hand-edited config and
+   don't depend on which account is logged in, so every profile shares the
+   one install from step 10 instead of a separate `claude plugin
+   marketplace add`/`install` per org (that used to be the recipe here; it
+   just duplicated ~750MB of marketplace clones per profile for no benefit,
+   confirmed on the RPM-Avalon profile before this was fixed). `settings.json`
+   still merges per profile, so `enabledPlugins` can still differ per org
+   without needing a separate install -- flipping a plugin off there is
+   enough, the code stays shared either way.
+
+   If this org needs `tally`/`linear`/`lucid` MCP too, repeat the commands in
+   step 9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>` prefix -- MCP
+   registrations are `~/.claude.json`, not `plugins/`, so those aren't shared
+   by the symlink above and do need adding per profile.
 8. **iTerm2 globals**: `bash apps/iterm2/globals.sh` once, then restart iTerm2.
 9. **`tally` MCP is optional, not default -- ask before adding it.** Like
    pyenv and JetBrains, don't assume it's wanted just because it's
