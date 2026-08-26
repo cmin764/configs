@@ -16,6 +16,7 @@ Stdlib only. Safe to re-run any mode; that repeatability is the test.
 import json
 import plistlib
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -87,6 +88,16 @@ TRIMMED_COPIES = [
 
 ITERM2_PLIST = Path("~/Library/Preferences/com.googlecode.iterm2.plist").expanduser()
 ITERM2_PROFILE_GUID = "D3F7A1B2-3C4D-4E5F-8A9B-0C1D2E3F4A5B"
+
+# App-level (not per-profile) iTerm2 preferences, applied through `defaults`
+# so cfprefsd stays authoritative instead of a raw plist write racing a
+# running iTerm2. Int-valued only for now (all keys tracked so far are);
+# extend the type if a non-int key ever needs tracking.
+ITERM2_APP_PREFS_REL = "apps/iterm2/app-prefs.json"
+ITERM2_APP_PREFS_DOMAIN = "com.googlecode.iterm2"
+# Keys tracked regardless of what's currently in the repo file, so a first
+# --pull on a machine that has never had the template can still discover them.
+ITERM2_APP_PREF_KEYS = ["TabStyleWithAutomaticOption"]  # Appearance > Theme
 
 
 def deep_merge(dest, src):
@@ -307,6 +318,43 @@ def sync_iterm2(mode):
         sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
 
 
+def _defaults_read_int(domain, key):
+    result = subprocess.run(["defaults", "read", domain, key],
+                             capture_output=True, text=True)
+    return int(result.stdout.strip()) if result.returncode == 0 else None
+
+
+def sync_iterm2_app_prefs(mode):
+    src = repo_path(ITERM2_APP_PREFS_REL)
+    repo_prefs = json.loads(src.read_text()) if src.exists() else {}
+    if mode == "status":
+        for key in ITERM2_APP_PREF_KEYS:
+            value = repo_prefs.get(key)
+            live = _defaults_read_int(ITERM2_APP_PREFS_DOMAIN, key)
+            state = "in sync" if live == value else "differs"
+            print(f"[{state}]      iterm2 app pref {key} (repo={value} live={live})")
+        return
+    if mode in ("restore", "push"):
+        for key in ITERM2_APP_PREF_KEYS:
+            if key not in repo_prefs:
+                continue
+            subprocess.run(["defaults", "write", ITERM2_APP_PREFS_DOMAIN, key,
+                             "-int", str(repo_prefs[key])], check=True)
+        if repo_prefs:
+            print(f"  wrote iterm2 app prefs: {', '.join(repo_prefs)} "
+                  "(quit and reopen iTerm2 to pick up)")
+    elif mode == "pull":
+        live_prefs = {k: _defaults_read_int(ITERM2_APP_PREFS_DOMAIN, k)
+                      for k in ITERM2_APP_PREF_KEYS}
+        live_prefs = {k: v for k, v in live_prefs.items() if v is not None}
+        if not live_prefs:
+            print(f"  skip {ITERM2_APP_PREFS_REL}: nothing live to pull")
+            return
+        ensure_parent(src)
+        src.write_text(json.dumps(live_prefs, indent=2) + "\n")
+        print(f"  pulled iterm2 app prefs -> {ITERM2_APP_PREFS_REL}")
+
+
 def run(mode):
     print(f"== config-sync --{mode} ==")
     for src, dst in SYMLINKS:
@@ -320,6 +368,7 @@ def run(mode):
     for src, dst in COPIES:
         sync_copy(src, dst, mode)
     sync_iterm2(mode)
+    sync_iterm2_app_prefs(mode)
     for src, dst, drop_keys in TRIMMED_COPIES:
         sync_trimmed(src, dst, drop_keys, mode)
 
