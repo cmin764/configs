@@ -68,4 +68,10 @@ stays a human-in-the-loop step in the skill, not something CI enforces.
 
 Promoting a skill from a project repo into `.claude/skills/` here is a
 separate, occasional decision -- worth doing when something proves reusable
-across projects, not something to automate into the sync loop.
+across projects, not something to automate into the sync loop. Skills that
+live here are personal, user-authored tooling and stay identical across
+every Claude Code account this machine logs into (personal, any per-org
+profile -- see `config-sync`'s restore step 7); that's different from a
+project's own `.claude/skills/`, which a team shares through that project's
+git history and Claude Code discovers per-project regardless of which
+account is active.
