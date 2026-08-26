@@ -60,6 +60,16 @@ cruft. Everything else pulls automatically because it's either low-sensitivity
 
 Order matters; later steps assume earlier ones landed.
 
+**Two tools are optional, not default -- ask before installing them, don't
+just silently skip or silently include:** `pyenv` (step 13) and JetBrains
+Toolbox/any JetBrains IDE (step 12). Both cost real time and disk if
+installed unnecessarily, and both have a genuine "maybe I do want this"
+case (a project pinning an old Python via `.python-version`, a JetBrains IDE
+for a specific stack). If an agent is driving this restore, interview the
+user on these two specifically before running the corresponding install
+command -- don't infer the answer from "everything else in the repo gets
+installed."
+
 1. **Install prerequisites**: Homebrew, then `brew install gh` (git credential
    helper) and whatever else this machine's `brew leaves`/`brew list --cask`
    needs -- not committed here, by the scope rule above. Install Claude Code.
