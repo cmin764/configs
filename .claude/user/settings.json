@@ -82,6 +82,12 @@
     "vercel@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
+    "thedotmack": {
+      "source": {
+        "source": "github",
+        "repo": "thedotmack/claude-mem"
+      }
+    },
     "ponytail": {
       "source": {
         "source": "github",

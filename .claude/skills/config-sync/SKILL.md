@@ -69,11 +69,26 @@ Order matters; later steps assume earlier ones landed.
 3. **Restore**: `cd ~/Work/cmin764/configs && python3 .claude/skills/config-sync/scripts/sync.py --restore`.
    Any real file already at a symlink target gets backed up to
    `<name>.pre-config-sync.bak` next to it, never silently overwritten.
-4. **Initialize RTK once**: now that step 3 has symlinked `~/.claude/RTK.md`
-   to the repo copy, run `rtk init -g` to install the global hook. Never
-   re-run it on a machine that's already set up -- since `~/.claude/RTK.md`
-   is a symlink, `rtk init -g` would overwrite the repo's copy through it
-   (see that file for details).
+4. **Do not run `rtk init -g` on restore.** This repo's `.claude/user/settings.json`
+   already declares the `PreToolUse` hook (`rtk hook claude`) and its
+   `.claude/user/CLAUDE.md` already imports `@~/.claude/RTK.md` -- step 3's
+   merge and symlink land both, so the hook is live the moment restore
+   finishes. `rtk init -g` doesn't check for this: it unconditionally
+   rewrites `~/.claude/RTK.md` and appends to `~/.claude/CLAUDE.md` with its
+   own generic template, and since both are symlinks into this repo, running
+   it here destroys the hand-tuned `RTK.md` content through the symlink
+   (confirmed by running it on a fresh restore -- it silently replaced the
+   full command reference and the "do not re-run" warning itself with rtk's
+   stock output). If that ever happens, `git checkout -- .claude/user/RTK.md
+   .claude/user/CLAUDE.md` recovers the repo copy.
+   Verify instead of initializing: confirm the hook fires (run something
+   `RTK.md` lists as intercepted, e.g. `git status`, and see rtk's condensed
+   output rather than git's normal output). `rtk init --show` is safe and
+   read-only if you want rtk's own diagnostic, but expect it to report the
+   global `CLAUDE.md` as "not configured" even when everything works --
+   it's checking for the bare `@RTK.md` line its own installer would have
+   added, not this repo's `@~/.claude/RTK.md` form; that mismatch is
+   expected here and not a problem.
 5. **Fill in secrets**: create `~/.zprofile.local` (`chmod 600`) with the six
    keys named in `.zprofile`'s comments (`GITHUB_TOKEN`, `OPENAI_API_KEY`,
    `GEMINI_API_KEY`, `GOOGLE_MAPS_API_KEY`, `TALLY_API_KEY`, `CAL_API_KEY`).
@@ -97,7 +112,31 @@ Order matters; later steps assume earlier ones landed.
    ```
    claude mcp add --transport http tally https://api.tally.so/mcp
    ```
-10. **Verify**: open a new shell (`echo $PATH` should start with
+10. **Register and install the two Claude Code plugins.** `enabledPlugins`
+    and `extraKnownMarketplaces` in `.claude/user/settings.json` only
+    *declare* that `claude-mem` and `ponytail` should be on -- restore's
+    merge step does not actually fetch or install them. Do it by hand:
+    ```
+    claude plugin marketplace add thedotmack/claude-mem
+    claude plugin marketplace add DietrichGebert/ponytail
+    claude plugin install claude-mem@thedotmack
+    claude plugin install ponytail@ponytail
+    ```
+    `claude plugin list` should then show both as `enabled`. Two more
+    things worth knowing before expecting the statusline badges to go
+    green:
+    - **claude-mem's hooks need a JS runtime already on `PATH`** (its
+      `SessionStart` hook invokes `node .../bun-runner.js`) -- if this
+      machine hasn't reached the Node/nvm/Bun step yet, the worker will
+      fail to start and `statusLine`'s `[MEM]` badge will read
+      `[MEM:DOWN]` until it has. Not a bug, just an ordering dependency
+      worth doing the toolchain step first, or re-checking after.
+    - **Both plugins only fully activate on a fresh `SessionStart`**
+      (claude-mem spawns its worker there; ponytail's mode-tracker hook
+      writes the flag file its statusline badge reads). If you install
+      them mid-session, restart Claude Code once before judging whether
+      the statusline is broken.
+11. **Verify**: open a new shell (`echo $PATH` should start with
    `~/.local/bin`), `gh auth login`, then `gh auth status` and a `git fetch` on
    a private repo to confirm the credential helper resolves `gh` via `PATH`
    rather than the Intel-only `/usr/local/bin/gh` this repo used to hardcode.
