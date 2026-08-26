@@ -36,6 +36,13 @@ that's a binary plist with ~1300 keys of Sparkle-updater and window-position
 junk mixed in. Pull re-exports just the one profile; push drops the extracted
 JSON into `DynamicProfiles/`, which iTerm2 picks up live, no restart needed.
 
+A second machine can already carry its own local-only dynamic profile under a
+different name, predating this skill -- if it happens to share the repo's
+hardcoded Guid (cloned by hand from an earlier machine), iTerm2 reports a
+"duplicate Guid" warning on launch after a `--push`. That local profile isn't
+managed by this skill: give it a fresh Guid by hand (any UUID, iTerm2 doesn't
+care which) rather than touching `Wandercode.json`, then restart iTerm2.
+
 ## Commands
 
 ```bash
