@@ -206,7 +206,20 @@ from "everything else in the repo gets installed."
    "
    ```
    Pick a free port per additional org profile (`37711`, `37721`, ...) if
-   there's ever more than one. Existing profiles already sharing one worker
+   there's ever more than one.
+
+   **Known gap, not fixed here because it's currently inert:**
+   `CLAUDE_MEM_SERVER_URL`/`CLAUDE_MEM_SERVER_BETA_URL` default to a port
+   derived from the OS uid (`37877 + uid%100`), not from the data dir --
+   every profile on this machine computes the *same* default regardless of
+   `CLAUDE_MEM_DATA_DIR`, so if `CLAUDE_MEM_RUNTIME` is ever switched from
+   its default `worker` to `server`, two profiles would collide on that
+   port the same way the worker did before this fix. Harmless today only
+   because nothing listens on it in the default `worker` runtime -- revisit
+   if a future claude-mem version defaults to the server runtime, or if you
+   deliberately opt into it.
+
+   Existing profiles already sharing one worker
    need this fix too, plus a one-time purge of the other org's project rows
    out of the personal `~/.claude-mem/claude-mem.db` (back up first,
    `DELETE FROM observations/session_summaries/sdk_sessions/user_prompts

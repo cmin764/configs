@@ -5,7 +5,7 @@
 # can cause a hook timeout.
 set -uo pipefail
 
-MEM_DIR="$HOME/.claude-mem"
+MEM_DIR="${CLAUDE_MEM_DATA_DIR:-$HOME/.claude-mem}"
 PIDFILE="$MEM_DIR/worker.pid"
 
 if [ -f "$PIDFILE" ]; then
