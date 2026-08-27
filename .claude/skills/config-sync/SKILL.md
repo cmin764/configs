@@ -179,6 +179,58 @@ from "everything else in the repo gets installed."
    the commands in step 9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>`
    prefix -- also per profile, for the same reason.
 
+   **If claude-mem is installed here, it needs its own data dir too, or its
+   worker silently bills the wrong account.** claude-mem's worker is a
+   machine-wide singleton keyed by data dir (default `~/.claude-mem`,
+   port `37701`) that spawns SDK calls billed to whatever
+   `CLAUDE_CONFIG_DIR` its own launching env carried -- with no
+   `CLAUDE_MEM_DATA_DIR` set, every profile's claude-mem shares one worker,
+   and whichever profile happens to boot it first pays for every other
+   profile's memory generation until reboot. `.zshrc`'s
+   `_claude_config_dir_by_pwd` hook already exports
+   `CLAUDE_MEM_DATA_DIR=~/.claude-mem-<org>` alongside `CLAUDE_CONFIG_DIR`
+   whenever that directory exists -- create it and give it a distinct
+   worker port so the two workers don't collide:
+   ```
+   mkdir -p ~/.claude-mem-<org>
+   cp ~/.claude-mem/settings.json ~/.claude-mem-<org>/settings.json
+   python3 -c "
+   import json
+   p = '$HOME/.claude-mem-<org>/settings.json'
+   d = json.load(open(p))
+   d['CLAUDE_MEM_DATA_DIR'] = '$HOME/.claude-mem-<org>'
+   d['CLAUDE_MEM_WORKER_PORT'] = '37711'
+   d['CLAUDE_MEM_QUEUE_REDIS_PREFIX'] = 'claude_mem_37711'
+   d['CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH'] = '$HOME/.claude-mem-<org>/transcript-watch.json'
+   json.dump(d, open(p, 'w'), indent=2)
+   "
+   ```
+   Pick a free port per additional org profile (`37711`, `37721`, ...) if
+   there's ever more than one.
+
+   **Known gap, not fixed here because it's currently inert:**
+   `CLAUDE_MEM_SERVER_URL`/`CLAUDE_MEM_SERVER_BETA_URL` default to a port
+   derived from the OS uid (`37877 + uid%100`), not from the data dir --
+   every profile on this machine computes the *same* default regardless of
+   `CLAUDE_MEM_DATA_DIR`, so if `CLAUDE_MEM_RUNTIME` is ever switched from
+   its default `worker` to `server`, two profiles would collide on that
+   port the same way the worker did before this fix. Harmless today only
+   because nothing listens on it in the default `worker` runtime -- revisit
+   if a future claude-mem version defaults to the server runtime, or if you
+   deliberately opt into it.
+
+   Existing profiles already sharing one worker
+   need this fix too, plus a one-time purge of the other org's project rows
+   out of the personal `~/.claude-mem/claude-mem.db` (back up first,
+   `DELETE FROM observations/session_summaries/sdk_sessions/user_prompts
+   WHERE project = '<name>'`, then `VACUUM`) -- a fresh Mac restore
+   following this step never accumulates that commingling in the first
+   place. After creating the profile or editing its settings, start a new
+   shell (or `source ~/.zshrc` and `cd` out and back into the org
+   directory) and start a fresh Claude Code session there before trusting
+   `CLAUDE_MEM_DATA_DIR` -- an already-running shell or session keeps its
+   env from before the change.
+
    Cosmetic side effect: `claude doctor` on this new profile will report
    "native installation but config install method is 'not set'" -- the
    native installer only stamps `installMethod` into the default

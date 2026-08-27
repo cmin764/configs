@@ -48,16 +48,28 @@ export DISABLE_AUTOUPDATER=1
 # To add one: `mkdir -p ~/.claude-<org>`, then
 # `CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login` (real browser OAuth,
 # full feature access), then `sync.py --push` to link in shared skills/hooks.
+# claude-mem's worker is a machine-wide singleton keyed by data dir, and it
+# spawns SDK calls billed to whatever CLAUDE_CONFIG_DIR its own env carries --
+# so an org profile without its own CLAUDE_MEM_DATA_DIR silently bills
+# claude-mem's model calls to whichever profile happened to boot the worker
+# first. Pair a ~/.claude-mem-<org> dir with each ~/.claude-<org> profile to
+# keep memory (and its billing) isolated too.
 _claude_config_dir_by_pwd() {
     case "$PWD" in
         "$HOME"/Work/*)
             local rest="${PWD#$HOME/Work/}"
             local org="${rest%%/*}"
             local dir="$HOME/.claude-${(L)org}"
-            [ -d "$dir" ] && export CLAUDE_CONFIG_DIR="$dir" || unset CLAUDE_CONFIG_DIR
+            local mem_dir="$HOME/.claude-mem-${(L)org}"
+            if [ -d "$dir" ]; then
+                export CLAUDE_CONFIG_DIR="$dir"
+                [ -d "$mem_dir" ] && export CLAUDE_MEM_DATA_DIR="$mem_dir" || unset CLAUDE_MEM_DATA_DIR
+            else
+                unset CLAUDE_CONFIG_DIR CLAUDE_MEM_DATA_DIR
+            fi
             ;;
         *)
-            unset CLAUDE_CONFIG_DIR
+            unset CLAUDE_CONFIG_DIR CLAUDE_MEM_DATA_DIR
             ;;
     esac
 }
