@@ -52,6 +52,24 @@ themselves, the `memory/` dirs, and tool configs are never touched.
 | plugin-marketplace-git | `<profile>/plugins/marketplaces/*/.git` for every discovered profile | `du -sh` per dir | confirm prompt, then delete dir | Med — re-cloned on next `claude plugin marketplace update` |
 | plugin-marketplace-binaries | files under `<profile>/plugins/marketplaces/**` matching `.pdf/.zip/.dmg/.mp4/.mov`, ≥1MB | file size | confirm prompt, then delete file | Med — upstream repo content, not needed to run the plugin; re-fetched if the marketplace is updated |
 
+### Plugin-cache targets: verified, not just assumed
+
+- **`.git` removal self-heals.** Tested against two real marketplaces
+  (`ponytail`, and `thedotmack` at 128M): `claude plugin marketplace update
+  <name>` detects the missing `.git`, logs "Found stale directory, cleaning
+  up and re-cloning", and re-clones without manual intervention. No local
+  edits are ever expected in a marketplace clone, so there's nothing to lose.
+- **Cached `node_modules` are dev-only, confirmed via `package.json`.** The
+  475M of tree-sitter grammar packages found in one profile's `claude-mem`
+  cache all live under `devDependencies`, not `dependencies` — verified by
+  reading the marketplace's `package.json` directly, not inferred. The same
+  plugin's cache in the main profile ships with *no* `node_modules` at all
+  (compiled/bundled at install time), which is the expected end state; the
+  475M copy was leftover dev-install cruft from that profile, not a runtime
+  dependency. The vercel plugin's compiled `hooks/*.mjs` were separately
+  confirmed to import only Node builtins (`fs`, `path`, `crypto`, …), so
+  losing its `node_modules` doesn't touch anything the hook actually runs.
+
 ### node_modules safety constraints
 
 - Only `node_modules` subdirectories are ever deleted, never the project root.
