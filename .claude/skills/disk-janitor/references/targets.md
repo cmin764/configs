@@ -50,7 +50,7 @@ themselves, the `memory/` dirs, and tool configs are never touched.
 | docker (at level 3) | daemon socket | `docker system df` Images RECLAIMABLE | `docker system prune -a -f` (no --volumes) — requires confirm | Med-high — removes ALL unused images including tagged ones; re-pull needed |
 | plugin-node-modules | `<profile>/plugins/cache/**/node_modules` (depth ≤ 4) for every discovered profile | `du -sh` per dir | confirm prompt, then delete dir | Med — rebuilt automatically on next plugin run |
 | plugin-marketplace-git | `<profile>/plugins/marketplaces/*/.git` for every discovered profile | `du -sh` per dir | confirm prompt, then delete dir | Med — re-cloned on next `claude plugin marketplace update` |
-| plugin-marketplace-binaries | files under `<profile>/plugins/marketplaces/**` matching `.pdf/.zip/.dmg/.mp4/.mov`, ≥1MB | file size | confirm prompt, then delete file | Med — upstream repo content, not needed to run the plugin; re-fetched if the marketplace is updated |
+| plugin-marketplace-binaries | files under `<profile>/plugins/marketplaces/**` matching `.pdf/.zip/.dmg/.mp4/.mov`, ≥1MB | file size | confirm prompt, then delete file | Med — upstream repo content, not needed to run the plugin; **not durable**, see note below |
 
 ### Plugin-cache targets: verified, not just assumed
 
@@ -69,6 +69,15 @@ themselves, the `memory/` dirs, and tool configs are never touched.
   dependency. The vercel plugin's compiled `hooks/*.mjs` were separately
   confirmed to import only Node builtins (`fs`, `path`, `crypto`, …), so
   losing its `node_modules` doesn't touch anything the hook actually runs.
+- **`plugin-marketplace-binaries` is a reclaim window, not a permanent
+  fix — by design.** These files are tracked in the marketplace's default
+  branch upstream (confirmed: a `.git` re-clone brings them straight back
+  alongside the rest of the repo). Deleting them only holds until the next
+  `marketplace update`. That's an accepted tradeoff, not a bug: running
+  disk-janitor periodically reclaims the space each time it accumulates,
+  the same way brew/npm/pip caches are never "permanently" empty either.
+  Report-only was considered and rejected — the user wants the space back
+  now, refreshed cost be damned.
 
 ### node_modules safety constraints
 
