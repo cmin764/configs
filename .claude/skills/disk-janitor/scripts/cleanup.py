@@ -37,15 +37,33 @@ KNOWN_TARGETS = {
     "brew", "uv", "pip", "npm", "bun", "trash", "claude-tmp",
     "chrome", "jetbrains", "logs", "claude-cache", "claude-chats", "docker",
     "node_modules", "xcode", "docker-volumes",
+    "plugin-node-modules", "plugin-marketplace-git", "plugin-marketplace-binaries",
 }
 
 # Common project directory names to probe when --work-dir is not specified.
 _WORK_DIR_CANDIDATES = ["Work", "Projects", "projects", "dev", "code", "src", "repos"]
 
+# File extensions treated as large binaries when scanning marketplace clones.
+# Deliberately short and explicit rather than a generic "big file" heuristic,
+# so we never delete something a marketplace actually needs to run.
+_MARKETPLACE_BINARY_EXTS = {".pdf", ".zip", ".dmg", ".mp4", ".mov"}
+_MARKETPLACE_BINARY_MIN_SIZE = 1024 * 1024  # skip small icon/asset files
+
 
 def _detect_work_dirs() -> list[Path]:
     found = [HOME / name for name in _WORK_DIR_CANDIDATES if (HOME / name).is_dir()]
     return found or [HOME]
+
+
+def _detect_claude_profiles() -> list[Path]:
+    """~/.claude plus any ~/.claude-* CLAUDE_CONFIG_DIR profile that has a plugins/ dir.
+
+    Profiles aren't centrally registered anywhere (config-sync deliberately
+    doesn't sync plugins/ across them), so this globs for them at runtime
+    instead of hardcoding a list that would go stale.
+    """
+    candidates = [HOME / ".claude"] + sorted(HOME.glob(".claude-*"))
+    return [p for p in candidates if (p / "plugins").is_dir()]
 
 
 # Paths outside this allowlist are never deleted, even if a target resolves there.
@@ -70,10 +88,13 @@ _ALLOWLIST_BASE = [
 ALLOWLIST: list[Path] = []
 
 
-def _build_allowlist(work_dirs: list[Path]) -> None:
+def _build_allowlist(work_dirs: list[Path], profiles: list = None) -> None:
     ALLOWLIST.clear()
     ALLOWLIST.extend(_ALLOWLIST_BASE)
     ALLOWLIST.extend(work_dirs)
+    for profile in profiles or []:
+        ALLOWLIST.append(profile / "plugins" / "cache")
+        ALLOWLIST.append(profile / "plugins" / "marketplaces")
 
 
 def _in_allowlist(path: Path) -> bool:
@@ -336,6 +357,107 @@ def _apply_node_modules(stale_days: int, work_dirs: list[Path], dry_run: bool, y
     return results
 
 
+def _find_plugin_node_modules(profiles: list[Path]) -> list[Path]:
+    """node_modules dirs under <profile>/plugins/cache/**.
+
+    Unlike project node_modules, these belong to the plugin runtime, not a
+    live workspace, so there's no age/staleness question: they're rebuilt
+    automatically the next time the plugin runs. depth is bounded the same
+    way _find_stale_node_modules bounds project scans.
+    """
+    results = []
+    for profile in profiles:
+        cache_dir = profile / "plugins" / "cache"
+        if not cache_dir.exists():
+            continue
+        base_depth = len(cache_dir.resolve().parts)
+        for root, dirs, _files in os.walk(cache_dir):
+            root_path = Path(root)
+            depth = len(root_path.resolve().parts) - base_depth
+            if depth >= _NM_MAX_DEPTH:
+                dirs.clear()
+                continue
+            if "node_modules" in dirs:
+                dirs.remove("node_modules")
+                results.append(root_path / "node_modules")
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+    return results
+
+
+def _find_plugin_marketplace_git(profiles: list[Path]) -> list[Path]:
+    """.git dirs at the top of each marketplace clone under <profile>/plugins/marketplaces."""
+    results = []
+    for profile in profiles:
+        marketplaces = profile / "plugins" / "marketplaces"
+        if not marketplaces.exists():
+            continue
+        for marketplace in marketplaces.iterdir():
+            git_dir = marketplace / ".git"
+            if git_dir.is_dir():
+                results.append(git_dir)
+    return results
+
+
+def _find_plugin_marketplace_binaries(profiles: list[Path]) -> list[Path]:
+    """Large tracked binaries (PDFs, archives, media) inside marketplace working trees.
+
+    These are upstream repo content, not a cache, but they aren't needed to
+    run a plugin and get re-fetched on the next marketplace update.
+    """
+    results = []
+    for profile in profiles:
+        marketplaces = profile / "plugins" / "marketplaces"
+        if not marketplaces.exists():
+            continue
+        for path in marketplaces.rglob("*"):
+            if path.suffix.lower() not in _MARKETPLACE_BINARY_EXTS:
+                continue
+            try:
+                if not path.is_file() or path.stat().st_size < _MARKETPLACE_BINARY_MIN_SIZE:
+                    continue
+            except OSError:
+                continue
+            results.append(path)
+    return results
+
+
+def _apply_plugin_dirs(dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
+    """Shared apply logic for plugin-node-modules and plugin-marketplace-git:
+    both are directories, allowlist-gated, deleted whole via rmtree."""
+    results = []
+    for path in dirs:
+        if not _in_allowlist(path):
+            continue
+        size = _du(path)
+        freed = 0
+        if not dry_run:
+            if not yes and not _confirm(f"  Delete {path} ({_fmt(size)})?"):
+                continue
+            shutil.rmtree(path, ignore_errors=True)
+            freed = size
+        results.append({"path": str(path), "size": size, "freed": freed})
+    return results
+
+
+def _apply_plugin_marketplace_binaries(profiles: list[Path], dry_run: bool, yes: bool) -> list[dict]:
+    results = []
+    for path in _find_plugin_marketplace_binaries(profiles):
+        if not _in_allowlist(path):
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        freed = 0
+        if not dry_run:
+            if not yes and not _confirm(f"  Delete {path} ({_fmt(size)})?"):
+                continue
+            path.unlink(missing_ok=True)
+            freed = size
+        results.append({"path": str(path), "size": size, "freed": freed})
+    return results
+
+
 def _prune_claude_chats(days: int, dry_run: bool) -> int:
     """Prune old session transcripts under ~/.claude/projects.
 
@@ -437,6 +559,38 @@ def _selftest() -> None:
         assert freed == 0, "symlinked project dir was followed outside the tree"
         assert old_file.exists(), "file outside the projects tree was touched"
 
+    # Plugin profile discovery + target scanning: build a fake ~/.claude-fake
+    # profile with a node_modules, a marketplace .git, and a big tracked PDF,
+    # confirm the glob and walks find all three.
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        profile = tmp_path / ".claude-fake"
+        nm = profile / "plugins" / "cache" / "vendor" / "plugin" / "1.0.0" / "node_modules"
+        nm.mkdir(parents=True)
+        (nm / "pkg.js").write_text("x")
+
+        marketplace = profile / "plugins" / "marketplaces" / "vendor"
+        (marketplace / ".git").mkdir(parents=True)
+        (marketplace / ".git" / "HEAD").write_text("ref: refs/heads/main")
+
+        plans = marketplace / "plans"
+        plans.mkdir(parents=True)
+        big_pdf = plans / "deck.pdf"
+        big_pdf.write_bytes(b"0" * (_MARKETPLACE_BINARY_MIN_SIZE + 1))
+
+        real_home = HOME
+        HOME = tmp_path
+        try:
+            profiles = _detect_claude_profiles()
+            assert profile in profiles, "fake profile with plugins/ not discovered"
+            assert nm in _find_plugin_node_modules(profiles), "plugin node_modules not found"
+            assert (marketplace / ".git") in _find_plugin_marketplace_git(profiles), \
+                "marketplace .git not found"
+            assert big_pdf in _find_plugin_marketplace_binaries(profiles), \
+                "large marketplace binary not found"
+        finally:
+            HOME = real_home
+
     print("selftest ok")
 
 
@@ -487,7 +641,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
+def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list[Path]) -> list[dict]:
     only = set(args.only.split(",")) - {""} if args.only else set()
     skip = set(args.skip.split(",")) - {""} if args.skip else set()
     dry_run = not args.apply
@@ -659,6 +813,30 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path]) -> list[dict]:
         report.append({"target": "xcode", "level": 3, "reclaimable": size, "freed": freed,
                         "risk": "med", "note": "DerivedData + Archives + unavailable simulators"})
 
+    if active("plugin-node-modules", 3):
+        nm_results = _apply_plugin_dirs(_find_plugin_node_modules(profiles), dry_run=dry_run, yes=args.yes)
+        size = sum(r["size"] for r in nm_results)
+        freed = sum(r["freed"] for r in nm_results)
+        report.append({"target": "plugin-node-modules", "level": 3, "reclaimable": size, "freed": freed,
+                        "risk": "med", "note": f"{len(nm_results)} dirs; reinstalled on next plugin run",
+                        "details": [r["path"] for r in nm_results]})
+
+    if active("plugin-marketplace-git", 3):
+        git_results = _apply_plugin_dirs(_find_plugin_marketplace_git(profiles), dry_run=dry_run, yes=args.yes)
+        size = sum(r["size"] for r in git_results)
+        freed = sum(r["freed"] for r in git_results)
+        report.append({"target": "plugin-marketplace-git", "level": 3, "reclaimable": size, "freed": freed,
+                        "risk": "med", "note": f"{len(git_results)} dirs; re-cloned on next marketplace update",
+                        "details": [r["path"] for r in git_results]})
+
+    if active("plugin-marketplace-binaries", 3):
+        bin_results = _apply_plugin_marketplace_binaries(profiles, dry_run=dry_run, yes=args.yes)
+        size = sum(r["size"] for r in bin_results)
+        freed = sum(r["freed"] for r in bin_results)
+        report.append({"target": "plugin-marketplace-binaries", "level": 3, "reclaimable": size, "freed": freed,
+                        "risk": "med", "note": f"{len(bin_results)} files; re-fetched from upstream if needed",
+                        "details": [r["path"] for r in bin_results]})
+
     # --- Dangerous ---
 
     if args.include_dangerous and active("docker-volumes", 3):
@@ -681,7 +859,8 @@ def main() -> None:
     dry_run = not args.apply
 
     work_dirs = [Path(args.work_dir).expanduser()] if args.work_dir else _detect_work_dirs()
-    _build_allowlist(work_dirs)
+    profiles = _detect_claude_profiles()
+    _build_allowlist(work_dirs, profiles)
 
     disk = shutil.disk_usage("/")
     free_before = disk.free
@@ -691,7 +870,7 @@ def main() -> None:
         print(f"\n=== disk-janitor [{mode}] level={args.level} ===")
         print(f"Free before: {_fmt(free_before)} / {_fmt(disk.total)}\n")
 
-    report = build_report(args, work_dirs)
+    report = build_report(args, work_dirs, profiles)
 
     free_after = shutil.disk_usage("/").free
     total_reclaimable = sum(r["reclaimable"] for r in report)
