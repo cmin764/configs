@@ -95,6 +95,10 @@ def _build_allowlist(work_dirs: list[Path], profiles: list = None) -> None:
     for profile in profiles or []:
         ALLOWLIST.append(profile / "plugins" / "cache")
         ALLOWLIST.append(profile / "plugins" / "marketplaces")
+        ALLOWLIST.append(profile / "projects")
+        ALLOWLIST.append(profile / "shell-snapshots")
+        ALLOWLIST.append(profile / "paste-cache")
+        ALLOWLIST.append(profile / "cache")
 
 
 def _in_allowlist(path: Path) -> bool:
@@ -458,40 +462,41 @@ def _apply_plugin_marketplace_binaries(profiles: list[Path], dry_run: bool, yes:
     return results
 
 
-def _prune_claude_chats(days: int, dry_run: bool) -> int:
-    """Prune old session transcripts under ~/.claude/projects.
+def _prune_claude_chats(profiles: list[Path], days: int, dry_run: bool) -> int:
+    """Prune old session transcripts under <profile>/projects for every profile.
 
     Each project dir holds session .jsonl files, per-session subdirs, and a
     persistent memory/ dir. Only session files (and their matching subdir) older
     than the cutoff are removed; memory and the project dir itself are never
     touched.
     """
-    projects_dir = HOME / ".claude" / "projects"
-    if not projects_dir.exists():
-        return 0
     cutoff = time.time() - days * 86400
     total = 0
-    resolved_root = projects_dir.resolve()
-    for project in projects_dir.iterdir():
-        if not project.is_dir():
+    for profile in profiles:
+        projects_dir = profile / "projects"
+        if not projects_dir.exists():
             continue
-        if not project.resolve().is_relative_to(resolved_root):
-            continue  # symlink escaping the projects tree, never follow it
-        for entry in project.glob("*.jsonl"):
-            try:
-                if entry.stat().st_mtime >= cutoff:
-                    continue
-                size = entry.stat().st_size
-            except OSError:
+        resolved_root = projects_dir.resolve()
+        for project in projects_dir.iterdir():
+            if not project.is_dir():
                 continue
-            session_dir = project / entry.stem
-            if session_dir.is_dir() and session_dir.name != "memory":
-                size += _du(session_dir)
-            total += size
-            if not dry_run:
-                entry.unlink(missing_ok=True)
+            if not project.resolve().is_relative_to(resolved_root):
+                continue  # symlink escaping the projects tree, never follow it
+            for entry in project.glob("*.jsonl"):
+                try:
+                    if entry.stat().st_mtime >= cutoff:
+                        continue
+                    size = entry.stat().st_size
+                except OSError:
+                    continue
+                session_dir = project / entry.stem
                 if session_dir.is_dir() and session_dir.name != "memory":
-                    shutil.rmtree(session_dir, ignore_errors=True)
+                    size += _du(session_dir)
+                total += size
+                if not dry_run:
+                    entry.unlink(missing_ok=True)
+                    if session_dir.is_dir() and session_dir.name != "memory":
+                        shutil.rmtree(session_dir, ignore_errors=True)
     return total
 
 
@@ -553,7 +558,7 @@ def _selftest() -> None:
         real_home = HOME
         HOME = tmp_path
         try:
-            freed = _prune_claude_chats(days=1, dry_run=True)
+            freed = _prune_claude_chats([tmp_path / ".claude"], days=1, dry_run=True)
         finally:
             HOME = real_home
         assert freed == 0, "symlinked project dir was followed outside the tree"
@@ -747,9 +752,7 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
 
     if active("claude-cache", 2):
         claude_paths = [
-            HOME / ".claude" / "shell-snapshots",
-            HOME / ".claude" / "paste-cache",
-            HOME / ".claude" / "cache",
+            p / sub for p in profiles for sub in ("shell-snapshots", "paste-cache", "cache")
         ]
         size = sum(_du(p) for p in claude_paths)
         freed = 0
@@ -760,10 +763,10 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
                         "risk": "low", "note": "shell-snapshots, paste-cache, cache dirs"})
 
     if active("claude-chats", 2):
-        size = _prune_claude_chats(args.chats_older_than, dry_run=True)
+        size = _prune_claude_chats(profiles, args.chats_older_than, dry_run=True)
         freed = 0
         if not dry_run:
-            freed = _prune_claude_chats(args.chats_older_than, dry_run=False)
+            freed = _prune_claude_chats(profiles, args.chats_older_than, dry_run=False)
         report.append({"target": "claude-chats", "level": 2, "reclaimable": size, "freed": freed,
                         "risk": "low-med",
                         "note": f"sessions older than {args.chats_older_than}d (loses --resume)"})
