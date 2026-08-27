@@ -43,7 +43,7 @@ dry-run gives the fullest picture without touching anything.
 |-------|---------------|------|
 | 1 (default) | Package-manager caches via official CLIs: brew, uv, pip, npm, bun | Low |
 | 2 | + Chrome/JetBrains/IDE caches, ~/Library/Logs, Claude shell/paste cache, Claude chats older than N days, docker prune -f (dangling images + build cache only, tagged images untouched) | Low-med |
-| 3 | + Stale node_modules (projects untouched > N days), Xcode artifacts, brew --prune=all, docker prune -a (ALL unused images, confirm required) | Med (rebuild cost) |
+| 3 | + Stale node_modules (projects untouched > N days), Xcode artifacts, brew --prune=all, docker prune -a (ALL unused images, confirm required), Claude plugin caches: cached node_modules, marketplace `.git` dirs, large tracked binaries (PDFs/zips/media) in marketplace working trees | Med (rebuild cost) |
 | dangerous | docker system prune -a --volumes — double-gated: needs --include-dangerous + explicit confirm | High |
 
 Levels are cumulative. `--apply` alone runs level 1 only; you must pass
@@ -97,6 +97,8 @@ python3 scripts/cleanup.py --level 3 --work-dir ~/code --apply
 - claude-tmp only removes entries older than 24h, so the live session survives.
 - Docker volumes are never touched except via the explicit `--include-dangerous` path.
 - Unknown `--only`/`--skip` names fail fast with the list of valid targets.
+- Claude Code profiles (`~/.claude` plus any `~/.claude-*` `CLAUDE_CONFIG_DIR`
+  profile) are auto-discovered by globbing — no profile list to keep in sync.
 
 ---
 

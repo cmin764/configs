@@ -48,6 +48,36 @@ themselves, the `memory/` dirs, and tool configs are never touched.
 | xcode | `~/Library/Developer/Xcode/DerivedData`, `~/Library/Developer/Xcode/Archives`, `~/Library/Developer/CoreSimulator/Devices` | `du -sh` each | confirm prompt, then delete DerivedData/Archives; simulators via `xcrun simctl delete unavailable` | Med — Xcode rebuilds; only orphaned simulators removed |
 | brew-prune-all | `~/Library/Caches/Homebrew` | `brew cleanup -n --prune=all` | `brew cleanup -s --prune=all` | Med — removes all cached bottles, not just expired |
 | docker (at level 3) | daemon socket | `docker system df` Images RECLAIMABLE | `docker system prune -a -f` (no --volumes) — requires confirm | Med-high — removes ALL unused images including tagged ones; re-pull needed |
+| plugin-node-modules | `<profile>/plugins/cache/**/node_modules` (depth ≤ 4) for every discovered profile | `du -sh` per dir | confirm prompt, then delete dir | Med — rebuilt automatically on next plugin run |
+| plugin-marketplace-git | `<profile>/plugins/marketplaces/*/.git` for every discovered profile | `du -sh` per dir | confirm prompt, then delete dir | Med — re-cloned on next `claude plugin marketplace update` |
+| plugin-marketplace-binaries | files under `<profile>/plugins/marketplaces/**` matching `.pdf/.zip/.dmg/.mp4/.mov`, ≥1MB | file size | confirm prompt, then delete file | Med — upstream repo content, not needed to run the plugin; **not durable**, see note below |
+
+### Plugin-cache targets: verified, not just assumed
+
+- **`.git` removal self-heals.** Tested against two real marketplaces
+  (`ponytail`, and `thedotmack` at 128M): `claude plugin marketplace update
+  <name>` detects the missing `.git`, logs "Found stale directory, cleaning
+  up and re-cloning", and re-clones without manual intervention. No local
+  edits are ever expected in a marketplace clone, so there's nothing to lose.
+- **Cached `node_modules` are dev-only, confirmed via `package.json`.** The
+  475M of tree-sitter grammar packages found in one profile's `claude-mem`
+  cache all live under `devDependencies`, not `dependencies` — verified by
+  reading the marketplace's `package.json` directly, not inferred. The same
+  plugin's cache in the main profile ships with *no* `node_modules` at all
+  (compiled/bundled at install time), which is the expected end state; the
+  475M copy was leftover dev-install cruft from that profile, not a runtime
+  dependency. The vercel plugin's compiled `hooks/*.mjs` were separately
+  confirmed to import only Node builtins (`fs`, `path`, `crypto`, …), so
+  losing its `node_modules` doesn't touch anything the hook actually runs.
+- **`plugin-marketplace-binaries` is a reclaim window, not a permanent
+  fix — by design.** These files are tracked in the marketplace's default
+  branch upstream (confirmed: a `.git` re-clone brings them straight back
+  alongside the rest of the repo). Deleting them only holds until the next
+  `marketplace update`. That's an accepted tradeoff, not a bug: running
+  disk-janitor periodically reclaims the space each time it accumulates,
+  the same way brew/npm/pip caches are never "permanently" empty either.
+  Report-only was considered and rejected — the user wants the space back
+  now, refreshed cost be damned.
 
 ### node_modules safety constraints
 
@@ -110,4 +140,6 @@ allowlist raises an error and skips the target:
 ~/Library/Developer/Xcode/DerivedData
 ~/Library/Developer/Xcode/Archives
 ~/Library/Developer/CoreSimulator/Devices
+<profile>/plugins/cache/     (for ~/.claude and every ~/.claude-* profile)
+<profile>/plugins/marketplaces/
 ```
