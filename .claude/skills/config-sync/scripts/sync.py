@@ -83,18 +83,6 @@ COPIES = [
     ("apps/codex/hooks.json", "~/.codex/hooks.json"),
 ]
 
-# claude-mem-pid-guard.sh is one script shared by every place that hooks into
-# claude-mem (Claude Code's per-profile hooks dir, Codex's hooks dir) -- a
-# symlink here, not a second copy, so the CLAUDE_MEM_DATA_DIR fallback fix
-# only ever needs to land once. (Codex is GUI-launched from Dock/Spotlight,
-# not from a cd'd shell, so that fallback rarely fires in practice for it --
-# see SKILL.md -- but a stale duplicate diverging from the canonical script
-# is a bug regardless of how often the fallback path is hit.)
-CODEX_HOOK_SYMLINKS = [
-    (".claude/user/hooks/claude-mem-pid-guard.sh",
-     "~/.codex/hooks/claude-mem-pid-guard.sh"),
-]
-
 # Same shape as the app-rewritten list above, but the live file carries
 # fields that must never reach a public repo (auth identity, caches).
 # Pull drops them; push writes as-is.
@@ -385,8 +373,6 @@ def run(mode):
             sync_merge(src, profile_dir / rel, mode)
     for src, dst in COPIES:
         sync_copy(src, dst, mode)
-    for src, dst in CODEX_HOOK_SYMLINKS:
-        sync_symlink(src, dst, mode)
     sync_iterm2(mode)
     sync_iterm2_app_prefs(mode)
     for src, dst, drop_keys in TRIMMED_COPIES:

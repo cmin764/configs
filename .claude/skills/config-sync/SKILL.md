@@ -35,7 +35,6 @@ Practical effect: when hunting for an org profile's project entries, history, or
 look inside `~/.claude-<org>/.claude.json`, never at `$HOME/.claude.json` (that one belongs to the
 default profile only, regardless of which profile you're currently `cd`'d into).
 | **Copy** | `apps/cursor/settings.json`, `apps/cursor/mcp.json`, `apps/codex/hooks.json`, `apps/sublime/*`, `apps/docker/daemon.json`, `apps/iterm2/Wandercode.json` | The owning app rewrites its own file, so a symlink would let app noise flow straight into a public repo. Plain overwrite either direction is safe: these files carry no secrets. |
-| **Symlink (shared script)** | `.claude/user/hooks/claude-mem-pid-guard.sh` -> `~/.codex/hooks/claude-mem-pid-guard.sh` | Codex's hook config shells out to the same PID-guard script Claude Code's profiles use (see the `CLAUDE_MEM_DATA_DIR` fallback below) -- symlinked, not duplicated, so the fix only ever needs to land in one place. Found and fixed a real drift here: the live `~/.codex/hooks/` copy predated this symlink and was missing that fallback entirely. |
 | **Merge (per Claude profile)** | `.claude/user/settings.json` (installs to `<profile>/settings.json`) | Claude Code itself writes to this file (permission grants, plugin state). A plain copy on push would erase legitimate accumulated state; a plain copy on pull would drag that noise into the repo. Deep-merge, repo wins on conflicts, machine-only keys survive a push. Applied per profile, same set as the symlinks above. |
 | **`defaults` scalar** | `apps/iterm2/app-prefs.json` (`TabStyleWithAutomaticOption`, i.e. Appearance > Theme) | A handful of app-level `defaults(1)` keys that aren't part of any dynamic profile. Read/written via `defaults read/write com.googlecode.iterm2 <key>` (not a raw plist edit) so cfprefsd stays authoritative instead of racing a running iTerm2. Key list is hardcoded in `sync.py` so a first `--pull` on a machine without the template can still discover them. |
 
@@ -98,19 +97,26 @@ recall/capture stays a Claude Code CLI feature, where per-org isolation
 already works correctly via `.zshrc`'s `chpwd` hook.
 
 Codex's claude-mem integration is a native plugin (`config.toml`'s
-`[plugins."claude-mem@claude-mem-local"]`), not an MCP entry -- the only
-piece of it tracked here is the housekeeping PID-guard hook
-(`apps/codex/hooks.json`), which has no billing/data-dir behavior of its
-own. The plugin's *own* bundled hooks (cached under
-`~/.codex/plugins/cache/claude-mem-local/`, not repo-tracked) turned out to
-carry the same leak, worse: `SessionStart`/`UserPromptSubmit`/`PreToolUse`/
-`PostToolUse`/`Stop` all independently resolve `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`
-themselves, and `PostToolUse`/`Stop` are the ones that actually spend money
-(memory writes, LLM summarization) -- so nearly every tool call in a Codex
-session on an org project would bill the personal subscription and write to
-the personal `~/.claude-mem` DB. Disabled via `enabled = false` on that
-plugin in `config.toml` directly (a live, machine-only edit -- the file
-isn't repo-tracked, see above) rather than left running with the leak.
+`[plugins."claude-mem@claude-mem-local"]`), not an MCP entry. Its *own*
+bundled hooks (cached under `~/.codex/plugins/cache/claude-mem-local/`, not
+repo-tracked) turned out to carry the same leak as Cursor's, worse:
+`SessionStart`/`UserPromptSubmit`/`PreToolUse`/`PostToolUse`/`Stop` all
+independently resolve `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` themselves, and
+`PostToolUse`/`Stop` are the ones that actually spend money (memory writes,
+LLM summarization) -- so nearly every tool call in a Codex session on an org
+project would bill the personal subscription and write to the personal
+`~/.claude-mem` DB. Disabled via `enabled = false` on that plugin in
+`config.toml` directly (a live, machine-only edit -- the file isn't
+repo-tracked, see above) rather than left running with the leak.
+
+`apps/codex/hooks.json` used to also wire the `claude-mem-pid-guard.sh`
+housekeeping hook (symlinked from `.claude/user/hooks/`, same script Claude
+Code's profiles use) into Codex's `SessionStart`/`UserPromptSubmit`. Pulled
+once the plugin above was disabled: that hook exists solely to unstick
+claude-mem's worker before a stale PID file makes it skip respawning, and
+Codex never spawns that worker at all now, so it had nothing left to guard.
+Still correctly wired in Claude Code's own per-profile `settings.json`,
+where claude-mem remains active.
 
 If a specific org project genuinely needs Cursor or Codex to talk to that
 org's claude-mem/plugin install, the fix is a workspace-local override
