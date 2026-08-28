@@ -29,9 +29,11 @@ Then fill in `~/.zprofile.local` with real API keys (the six names are
 commented in `.zprofile`) and, if this machine does client work under a
 different git email, `cp .gitconfig-local.example ~/.gitconfig.local` and fill
 that in too. A `~/Work/<org>` directory needing its own full Claude Code
-account instead of the default login gets a `~/.claude-<org>` profile
-directory with its own browser login -- see `.zshrc`'s comments or the full
-restore order, including iTerm2 and the optional MCP servers:
+account instead of the default login gets a `~/.claude-<org>` profile via
+`python3 .claude/skills/config-sync/scripts/sync.py --new-profile <org>`
+(browser login, shared config, plugins, an isolated claude-mem) -- see
+`.zshrc`'s comments or the full restore order, including iTerm2 and the
+optional MCP servers:
 `.claude/skills/config-sync/SKILL.md`, or just ask Claude Code to run
 `/config-sync` once it's installed.
 

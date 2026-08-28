@@ -45,15 +45,14 @@ export DISABLE_AUTOUPDATER=1
 # login) per ~/Work/<org> dir. Falls back to the default ~/.claude login when
 # no ~/.claude-<org> profile exists yet -- nothing to set up for personal
 # repos or orgs that don't need a separate account.
-# To add one: `mkdir -p ~/.claude-<org>`, then
-# `CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login` (real browser OAuth,
-# full feature access), then `sync.py --push` to link in shared skills/hooks.
-# claude-mem's worker is a machine-wide singleton keyed by data dir, and it
-# spawns SDK calls billed to whatever CLAUDE_CONFIG_DIR its own env carries --
-# so an org profile without its own CLAUDE_MEM_DATA_DIR silently bills
-# claude-mem's model calls to whichever profile happened to boot the worker
-# first. Pair a ~/.claude-mem-<org> dir with each ~/.claude-<org> profile to
-# keep memory (and its billing) isolated too.
+# To add one: `python3 .claude/skills/config-sync/scripts/sync.py --new-profile <org>`
+# from the configs repo -- browser login, shared skills/hooks, plugins, and a
+# paired ~/.claude-mem-<org> dir on its own ports. Both dirs matter:
+# claude-mem's worker is a machine-wide singleton keyed by port, so two
+# profiles on the default port share one worker (its data dir and account),
+# and claude-mem's OAuth pre-flight reads the DEFAULT profile's login
+# regardless of CLAUDE_CONFIG_DIR unless ~/.claude-mem-<org>/.env carries the
+# org's own credential -- see config-sync's SKILL.md step 7.
 _claude_config_dir_by_pwd() {
     case "$PWD" in
         "$HOME"/Work/*)
