@@ -92,31 +92,59 @@ exactly the cross-account commingling the whole `~/.claude-mem-<org>` split
 carries memory/billing side effects at all.
 
 So `claude-mem` is **not present** in `apps/cursor/mcp.json` -- removed
-rather than pinned. Cursor keeps `excalidraw-architect` and `github`; memory
-recall/capture stays a Claude Code CLI feature, where per-org isolation
-already works correctly via `.zshrc`'s `chpwd` hook.
+rather than pinned. That turned out not to be the whole fix (see below).
 
-Codex's claude-mem integration is a native plugin (`config.toml`'s
-`[plugins."claude-mem@claude-mem-local"]`), not an MCP entry. Its *own*
+**Cursor has a second, separate integration path that `mcp.json` doesn't
+touch at all.** Beyond the hand-authored `mcp.json`, Cursor has its own
+native "Plugins" feature -- an account-level list of installed Claude Code
+Plugin-ecosystem plugins, tracked in `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
+(key `cursor.plugins.installedIds.<team>|<workspace>`, one entry per
+workspace plus a `no-workspace` default, all listing the same numeric plugin
+IDs). This is what actually spawns `Cursor Helper: mcp-process` running
+claude-mem's `mcp-server.cjs` under the namespace `plugin-claude-mem-mcp-search`
+-- confirmed live: talking to the *personal* profile's worker on port
+`37701`, regardless of which project window is open, same billing/data leak
+as above. Editing `apps/cursor/mcp.json` never touched this; it's a
+completely independent install path, not repo-tracked (same "app-accumulated
+state" category as the Cursor model-picker toggle, see step 12), and Cursor
+doesn't expose a CLI or a readable local catalog mapping those numeric IDs
+to plugin names -- config-sync can't safely identify or remove one of them by
+ID without risking disabling the wrong plugin (vercel/linear/slack/github
+are legitimately wanted). **Must be removed by hand: Cursor Settings ->
+search "Plugins" -> find claude-mem -> Uninstall.** Do this with Cursor fully
+quit and reopened after, so a stale in-memory process doesn't linger.
+
+Codex's claude-mem integration was a native plugin too
+(`config.toml`'s `[marketplaces.claude-mem-local]` /
+`[plugins."claude-mem@claude-mem-local"]`), not an MCP entry -- and its own
 bundled hooks (cached under `~/.codex/plugins/cache/claude-mem-local/`, not
-repo-tracked) turned out to carry the same leak as Cursor's, worse:
+repo-tracked) carried the same leak as Cursor's, worse:
 `SessionStart`/`UserPromptSubmit`/`PreToolUse`/`PostToolUse`/`Stop` all
-independently resolve `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` themselves, and
+independently resolved `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` themselves, and
 `PostToolUse`/`Stop` are the ones that actually spend money (memory writes,
-LLM summarization) -- so nearly every tool call in a Codex session on an org
-project would bill the personal subscription and write to the personal
-`~/.claude-mem` DB. Disabled via `enabled = false` on that plugin in
-`config.toml` directly (a live, machine-only edit -- the file isn't
-repo-tracked, see above) rather than left running with the leak.
+LLM summarization). Removed entirely rather than left disabled: both
+`config.toml` blocks deleted and `~/.codex/plugins/cache/claude-mem-local/`
+removed from disk (all live, machine-only edits -- the file isn't
+repo-tracked, see above).
 
 `apps/codex/hooks.json` used to also wire the `claude-mem-pid-guard.sh`
 housekeeping hook (symlinked from `.claude/user/hooks/`, same script Claude
 Code's profiles use) into Codex's `SessionStart`/`UserPromptSubmit`. Pulled
-once the plugin above was disabled: that hook exists solely to unstick
+once the plugin above was removed: that hook exists solely to unstick
 claude-mem's worker before a stale PID file makes it skip respawning, and
 Codex never spawns that worker at all now, so it had nothing left to guard.
-Still correctly wired in Claude Code's own per-profile `settings.json`,
-where claude-mem remains active.
+
+**claude-mem is now fully out of both Cursor and Codex, but stays on for
+Claude Code CLI** -- uninstalled from the default `~/.claude` profile only
+(`claude plugin uninstall claude-mem@thedotmack` under
+`CLAUDE_CONFIG_DIR=~/.claude`; the personal worker on port `37701` was also
+killed directly), left installed and correctly isolated on any
+`~/.claude-<org>` profile that wants it. `.claude/user/settings.json`'s
+`enabledPlugins.claude-mem@thedotmack: true` is left as `true` on purpose --
+it's the shared template merged into every profile, and per the documented
+behavior (step 10) it never auto-installs anything on its own, so it staying
+`true` doesn't resurrect claude-mem on the personal profile; a real
+reinstall there would need an explicit `claude plugin install` again.
 
 If a specific org project genuinely needs Cursor or Codex to talk to that
 org's claude-mem/plugin install, the fix is a workspace-local override
