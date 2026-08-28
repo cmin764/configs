@@ -176,7 +176,13 @@ worker's `workerPath` (its source file, which lives under
 `<profile>/plugins/cache/...`) doesn't belong to this session's
 `CLAUDE_CONFIG_DIR`. That catches the case `--status` can't: a stale
 worker process from before a settings fix, or a port collision that
-happens transiently between two profiles' cold starts.
+happens transiently between two profiles' cold starts. Both guards have
+tests CI runs on every push: `--selftest` drives the `--status` check
+against a throwaway HOME, and `.github/scripts/test_claude_mem_pid_guard.sh`
+runs the real hook with `security`/`curl` replaced by PATH shims, one case
+per leak state (default logged in, foreign worker, injected token, stale
+pidfile, port resolution order) -- so nothing here needs a live worker or a
+real keychain to be verified.
 
 ## What `--pull` deliberately refuses to automate
 
@@ -337,6 +343,36 @@ from "everything else in the repo gets installed."
    switches to `server` (a future claude-mem default, or a deliberate opt-in).
    Pick a free port block per additional org profile (`377{1,2,...}1` for
    worker, `379{1,2,...}1` for server) if there's ever more than one.
+
+   **Ports and data dirs isolate the data, not the billing.** Where a
+   worker's SDK calls get billed is decided by what OAuth token its `claude`
+   child ends up with, and claude-mem's pre-flight gets that wrong for org
+   profiles: the darwin branch of its keychain reader (in
+   `worker-service.cjs`) runs `security find-generic-password -s "Claude
+   Code-credentials"` -- the **unsuffixed** service name, which is always the
+   default `~/.claude` login (Claude Code stores org profiles under `Claude
+   Code-credentials-<sha256(CLAUDE_CONFIG_DIR)[:8]>`, confirmed by inspecting
+   the keychain on 2026-08-28). Whatever it finds there it injects as
+   `CLAUDE_CODE_OAUTH_TOKEN` into every SDK child, and Claude Code honours
+   that env var over its own per-profile keychain lookup. Net effect: a
+   logged-in default profile silently pays for *every* org profile's memory
+   generation, with perfect port/data-dir isolation and a correct
+   `CLAUDE_CONFIG_DIR`. When the default profile is logged out the lookup
+   fails, claude-mem "proceeds without token", and the `claude` child does
+   its own suffixed lookup -- correct, but only by absence. No claude-mem
+   setting disables the pre-flight; the only mechanical escape is an
+   `ANTHROPIC_API_KEY` in `~/.claude-mem-<org>/.env` (metered API billing
+   instead of the subscription -- a different trade, not a fix).
+
+   **Policy until it's fixed upstream: the default profile stays logged out
+   while any org profile runs claude-mem** (`CLAUDE_CONFIG_DIR=~/.claude
+   claude auth logout`). Two guards make a violation loud instead of
+   silent: `sync.py --status` prints `[LEAK RISK]` whenever the unsuffixed
+   keychain entry exists alongside any `~/.claude-mem-<org>`, and
+   `claude-mem-pid-guard.sh` re-checks the keychain on every prompt and
+   additionally reads the live worker's `/api/health` `ai.authMethod` --
+   "(env, ...)" there means a token was actually injected, and the hook
+   names the PID to kill.
 
    Skip the whole block (marketplace/install AND the isolation patch right
    after it) if this org doesn't need claude-mem/ponytail -- but never

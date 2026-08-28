@@ -20,5 +20,8 @@ jobs:
       - name: Secrets, JSON/shell validity, machine-specific paths, junk files
         run: python3 .github/scripts/check_configs.py
 
-      - name: config-sync selftest (deep_merge / diff_paths logic)
+      - name: config-sync selftest (deep_merge / diff_paths / claude-mem isolation logic)
         run: python3 .claude/skills/config-sync/scripts/sync.py --selftest
+
+      - name: claude-mem-pid-guard hook (shimmed security/curl, every leak state)
+        run: bash .github/scripts/test_claude_mem_pid_guard.sh

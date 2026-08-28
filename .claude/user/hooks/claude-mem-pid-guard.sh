@@ -27,19 +27,48 @@ fi
 # could themselves be stale.
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SETTINGS="$MEM_DIR/settings.json"
-if [ -f "$SETTINGS" ]; then
+ACCOUNT="${USER:-$(id -un)}"
+
+# claude-mem's OAuth pre-flight (worker-service.cjs, the darwin branch of its
+# keychain reader) looks up the Keychain service "Claude Code-credentials"
+# with NO config-dir hash suffix -- that name is always the DEFAULT profile's
+# login; org profiles live under "Claude Code-credentials-<sha256 prefix>".
+# Whatever it finds there it injects as CLAUDE_CODE_OAUTH_TOKEN into every
+# SDK child, and Claude Code honours that env var over its own per-profile
+# Keychain lookup. So a logged-in default profile silently pays for every
+# org profile's memory generation, regardless of ports, data dirs, or a
+# correct CLAUDE_CONFIG_DIR. No claude-mem setting disables the pre-flight
+# (the only mechanical escape is an API key in <data-dir>/.env), so until
+# it's fixed upstream the default profile must stay logged out while any
+# org profile runs claude-mem. This makes a violation loud on the next
+# prompt instead of invisible on the next invoice.
+if [ "$CONFIG_DIR" != "$HOME/.claude" ] && \
+   security find-generic-password -s "Claude Code-credentials" -a "$ACCOUNT" >/dev/null 2>&1; then
+  echo "claude-mem: LEAK RISK -- the default profile (~/.claude) is logged in. claude-mem reads that unsuffixed Keychain entry at worker spawn and injects it into its SDK calls, so THIS org profile's memory generation bills the DEFAULT account. Run: CLAUDE_CONFIG_DIR=~/.claude claude auth logout, then restart this profile's claude-mem worker." >&2
+fi
+
+# Env wins over settings.json inside claude-mem itself, so mirror that order
+# here or a shell-exported port would make this probe the wrong worker.
+port="${CLAUDE_MEM_WORKER_PORT:-}"
+[ -z "$port" ] && [ -f "$SETTINGS" ] && \
   port=$(grep -o '"CLAUDE_MEM_WORKER_PORT":[[:space:]]*"[0-9]*"' "$SETTINGS" | grep -o '[0-9]*')
-  if [ -n "$port" ]; then
-    health=$(curl -s --max-time 1 "http://127.0.0.1:$port/api/health" 2>/dev/null)
-    if [ -n "$health" ]; then
-      worker_path=$(printf '%s' "$health" | grep -o '"workerPath":"[^"]*"' | cut -d'"' -f4)
-      case "$worker_path" in
-        "$CONFIG_DIR"/* | "") ;;  # ours, or field absent from an older claude-mem -- fine
-        *)
-          echo "claude-mem: MISMATCH -- the worker on port $port belongs to a different profile ($worker_path), not $CONFIG_DIR. It authenticated at ITS spawn time under that other profile's account; this session's memory writes may be billing/isolated wrong until fixed. See SKILL.md's claude-mem isolation block." >&2
-          ;;
-      esac
-    fi
+[ -z "$port" ] && port=$((37700 + $(id -u) % 100))  # claude-mem's own default
+
+# The worker's /api/health reports workerPath=__filename, which lives under
+# <profile>/plugins/cache/ -- a fingerprint of which profile spawned it that
+# no stale env var can fake -- plus ai.authMethod, which says "(env, ...)"
+# only when the pre-flight above actually injected a token.
+health=$(curl -s --max-time 1 "http://127.0.0.1:$port/api/health" 2>/dev/null)
+if [ -n "$health" ]; then
+  worker_path=$(printf '%s' "$health" | grep -o '"workerPath":"[^"]*"' | cut -d'"' -f4)
+  case "$worker_path" in
+    "$CONFIG_DIR"/* | "") ;;  # ours, or field absent from an older claude-mem -- fine
+    *)
+      echo "claude-mem: MISMATCH -- the worker on port $port belongs to a different profile ($worker_path), not $CONFIG_DIR. It authenticated at ITS spawn time under that other profile's account; this session's memory writes may be billing/isolated wrong until fixed. See SKILL.md's claude-mem isolation block." >&2
+      ;;
+  esac
+  if [ "$CONFIG_DIR" != "$HOME/.claude" ] && printf '%s' "$health" | grep -q '"authMethod":"Claude Code OAuth token (env'; then
+    echo "claude-mem: LEAK ACTIVE -- the worker on port $port is running with an injected OAuth token, i.e. the DEFAULT profile's login, not this org profile's. Kill it (kill $(printf '%s' "$health" | grep -o '"pid":[0-9]*' | grep -o '[0-9]*')) after logging the default profile out; it respawns clean on the next prompt." >&2
   fi
 fi
 

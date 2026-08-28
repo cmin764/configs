@@ -13,11 +13,15 @@ Modes:
 
 Stdlib only. Safe to re-run any mode; that repeatability is the test.
 """
+import contextlib
+import getpass
+import io
 import json
 import plistlib
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -148,6 +152,35 @@ def _selftest():
         "deep_merge mutated src"
     assert diff_paths({"a": 1}, {"a": 1}) == []
     assert diff_paths({"a": 1}, {"a": 2}) == ["a: differs"]
+
+    # check_claude_mem_isolation against a throwaway HOME: the three states
+    # it must tell apart are "org shares the default's port/dir", "isolated
+    # but the default profile is logged in", and "fully isolated".
+    def isolation_report(org_settings, logged_in):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude-mem").mkdir()
+            (home / ".claude-mem" / "settings.json").write_text(json.dumps({
+                "CLAUDE_MEM_DATA_DIR": str(home / ".claude-mem"),
+                "CLAUDE_MEM_WORKER_PORT": "37701",
+                "CLAUDE_MEM_SERVER_URL": "http://127.0.0.1:37878",
+                "CLAUDE_MEM_SERVER_BETA_URL": "http://127.0.0.1:37878"}))
+            (home / ".claude-mem-org").mkdir()
+            (home / ".claude-mem-org" / "settings.json").write_text(json.dumps(org_settings))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                check_claude_mem_isolation(home, lambda: logged_in)
+            return out.getvalue()
+    isolated = {"CLAUDE_MEM_DATA_DIR": "/x/.claude-mem-org", "CLAUDE_MEM_WORKER_PORT": "37711",
+                "CLAUDE_MEM_SERVER_URL": "http://127.0.0.1:37911",
+                "CLAUDE_MEM_SERVER_BETA_URL": "http://127.0.0.1:37911"}
+    shared = dict(isolated, CLAUDE_MEM_WORKER_PORT="37701")
+    r = isolation_report(shared, False)
+    assert "[LEAK RISK]" in r and "CLAUDE_MEM_WORKER_PORT" in r, r
+    r = isolation_report(isolated, True)
+    assert "[isolated]     .claude-mem-org" in r and "default profile (~/.claude) is logged in" in r, r
+    r = isolation_report(isolated, False)
+    assert r.count("[isolated]") == 2 and "LEAK" not in r, r
     print("selftest ok")
 
 
@@ -361,24 +394,35 @@ def sync_iterm2_app_prefs(mode):
         print(f"  pulled iterm2 app prefs -> {ITERM2_APP_PREFS_REL}")
 
 
-def check_claude_mem_isolation():
+def _default_profile_logged_in():
+    """True when the unsuffixed 'Claude Code-credentials' keychain entry --
+    the default ~/.claude login -- exists. Org profiles get a hashed suffix,
+    so this is exactly the entry claude-mem's pre-flight would pick up."""
+    if sys.platform != "darwin":
+        return False
+    return subprocess.run(
+        ["security", "find-generic-password", "-s", "Claude Code-credentials",
+         "-a", getpass.getuser()], capture_output=True).returncode == 0
+
+
+def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_logged_in):
     """Status-only: an org's ~/.claude-mem-<org>/settings.json must not still
     point at the default profile's data dir/port, or its worker silently
     shares data and billing with the default profile instead of isolating
     (confirmed live 2026-08-28 -- see SKILL.md step 7's claude-mem block).
     Not a sync target itself (claude-mem, not this repo, owns these files),
-    just a tripwire so the leak is visible in --status instead of silent."""
-    default_settings = HOME / ".claude-mem" / "settings.json"
+    just a tripwire so the leak is visible in --status instead of silent.
+    `home`/`default_logged_in` are injectable so --selftest can drive it."""
+    default_settings = home / ".claude-mem" / "settings.json"
     if not default_settings.exists():
         return
     default = json.loads(default_settings.read_text())
     shared_keys = ["CLAUDE_MEM_DATA_DIR", "CLAUDE_MEM_WORKER_PORT",
                    "CLAUDE_MEM_SERVER_URL", "CLAUDE_MEM_SERVER_BETA_URL"]
-    for org_dir in sorted(HOME.glob(".claude-mem-*")):
-        settings = org_dir / "settings.json"
-        if not settings.exists():
-            continue
-        org = json.loads(settings.read_text())
+    org_dirs = [d for d in sorted(home.glob(".claude-mem-*"))
+                if (d / "settings.json").exists()]
+    for org_dir in org_dirs:
+        org = json.loads((org_dir / "settings.json").read_text())
         clashes = [k for k in shared_keys if org.get(k) == default.get(k)]
         if clashes:
             print(f"[LEAK RISK]    {org_dir.name}/settings.json shares "
@@ -386,6 +430,20 @@ def check_claude_mem_isolation():
                   f"per SKILL.md step 7's claude-mem isolation block")
         else:
             print(f"[isolated]     {org_dir.name}/settings.json")
+    # Ports and data dirs don't cover the auth side: claude-mem's OAuth
+    # pre-flight reads the DEFAULT profile's unsuffixed Keychain entry no
+    # matter which CLAUDE_CONFIG_DIR spawned it, and injects that token into
+    # its SDK calls (mechanism documented in claude-mem-pid-guard.sh). So a
+    # logged-in default profile is itself a leak whenever any org profile
+    # runs claude-mem -- the policy is "default stays logged out".
+    if org_dirs:
+        if default_logged_in():
+            print("[LEAK RISK]    default profile (~/.claude) is logged in while "
+                  "org claude-mem profiles exist -- their workers will inject "
+                  "its token; run: CLAUDE_CONFIG_DIR=~/.claude claude auth logout")
+        else:
+            print("[isolated]     default profile logged out (nothing for "
+                  "claude-mem's OAuth pre-flight to hijack)")
 
 
 def run(mode):
