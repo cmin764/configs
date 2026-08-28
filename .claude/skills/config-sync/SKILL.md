@@ -309,8 +309,11 @@ from "everything else in the repo gets installed."
    prints `[done]`/`[todo]` per step without touching anything):
    1. `~/.claude-<org>` created.
    2. `claude auth login` under it (browser OAuth, a full account).
-   3. `--push`, so the shared skills/hooks/`CLAUDE.md`/`RTK.md`/settings
-      land in the new profile like they did in the default one at step 3.
+   3. The per-profile slice of `--push` (symlinks plus the settings merge),
+      so the shared skills/hooks/`CLAUDE.md`/`RTK.md`/settings land in the
+      new profile like they did in the default one at restore step 3 --
+      without rewriting Cursor/iTerm/Sublime files, which a new Claude
+      profile has no business touching.
    4. claude-mem and ponytail marketplaces added and plugins installed in
       that profile.
    5. `~/.claude-mem-<org>/settings.json`: a copy of the default profile's
@@ -335,8 +338,10 @@ from "everything else in the repo gets installed."
    6. **`~/.claude-mem-<org>/.env` with a setup-token** -- the step the
       script shouts about, because it needs a browser round-trip and
       skipping it is the actual leak. Mechanism below.
-   7. Any worker still holding the org's port is killed so the next prompt
-      respawns it with the new settings and credential.
+   7. If steps 5 or 6 wrote anything this run, a worker still holding the
+      org's port is killed so the next prompt respawns it with the new
+      settings and credential; a worker that already booted on them is
+      left alone (so the audit re-run never restarts anything).
 
    `.zshrc`'s `_claude_config_dir_by_pwd` hook exports `CLAUDE_CONFIG_DIR`
    and `CLAUDE_MEM_DATA_DIR` for both dirs on every `cd` under
