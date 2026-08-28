@@ -1,6 +1,6 @@
 ---
 name: config-sync
-description: Sync hand-edited development configuration between this repo and the live machine, and restore it on a fresh Mac. Use when the user wants to check what's drifted between ~/Work/cmin764/configs and their home directory, wants to push repo config onto the machine or pull machine changes back into the repo, is setting up a new Mac, or mentions rotating the secrets in ~/.zprofile.local. Covers shell/git dotfiles, Claude Code user settings, and app configs (Cursor, iTerm2, Sublime, Docker) -- not the repo's skills themselves, which are just files.
+description: Sync hand-edited development configuration between this repo and the live machine, and restore it on a fresh Mac. Use when the user wants to check what's drifted between ~/Work/cmin764/configs and their home directory, wants to push repo config onto the machine or pull machine changes back into the repo, is setting up a new Mac, or mentions rotating the secrets in ~/.zprofile.local. Covers shell/git dotfiles, Claude Code user settings, and app configs (Cursor, Codex, iTerm2, Sublime, Docker) -- not the repo's skills themselves, which are just files.
 ---
 
 # config-sync
@@ -21,7 +21,7 @@ order on a bare machine.
 |---|---|---|
 | **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
 | **Symlink (per Claude profile)** | `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/`, `.claude/skills/` | Same as above, but applied once per Claude Code profile directory: `~/.claude` plus any `~/.claude-<org>` created for per-org account isolation (see restore step 7). A fresh Mac only has `~/.claude`. These are the user's own authored tooling (this repo's skills, hooks, memory files) -- deliberately identical everywhere, unlike plugins/MCP below: there's no personal-vs-work split for skills *you* wrote, only for third-party installs. A project's own `.claude/skills/` (versioned and shared with a team through that project's own repo) is a separate, unrelated layer Claude Code discovers per-project regardless of `CLAUDE_CONFIG_DIR` -- out of scope for this skill entirely, see README's note on skill promotion. |
-| **Not synced, deliberately** | `plugins/` and MCP registrations (`.claude.json`) inside each Claude profile | User-scope Claude Code state Claude Code itself keeps per config dir, not per human -- `claude plugin install`/`claude mcp add --scope user` only ever touch whichever `CLAUDE_CONFIG_DIR` is active. Installing a plugin under the personal profile must not make it appear at work and vice versa, so each profile gets its own independent install/registration (step 7's recipe repeats the commands per org) rather than sharing one copy. Costs some duplicate disk for plugins used in both places -- worth it for the isolation. |
+| **Not synced, deliberately** | `plugins/` and MCP registrations (`.claude.json`) inside each Claude profile; Codex's `config.toml` `[marketplaces.*]`/`[plugins.*]`/`[projects.*]` blocks | User-scope Claude Code state Claude Code itself keeps per config dir, not per human -- `claude plugin install`/`claude mcp add --scope user` only ever touch whichever `CLAUDE_CONFIG_DIR` is active. Installing a plugin under the personal profile must not make it appear at work and vice versa, so each profile gets its own independent install/registration (step 7's recipe repeats the commands per org) rather than sharing one copy. Costs some duplicate disk for plugins used in both places -- worth it for the isolation. Codex's `config.toml` mixes this same kind of self-managed state (marketplaces, plugin installs, per-project trust) with a handful of genuinely hand-edited scalars (`model`, `[shell_environment_policy]`, `[desktop]` prefs) in one TOML file -- `sync.py` is stdlib-only and has no TOML writer, and splitting the file cleanly would need one, so the whole file is left untracked rather than force a partial fit. `apps/codex/hooks.json` (Codex's actual hand-authored hook wiring, the TOML file's one purely-hand-edited chunk that's easy to isolate) is tracked on its own, same as `.claude/user/settings.json`'s `hooks` block. |
 
 **Where `.claude.json` actually lives is not consistent across profiles, and that's not a bug.**
 For the *default* profile (`CLAUDE_CONFIG_DIR=~/.claude`), Claude Code writes `.claude.json` at
@@ -34,7 +34,8 @@ clobber each other, defeating the whole point of per-org profiles.
 Practical effect: when hunting for an org profile's project entries, history, or `lastSessionId`,
 look inside `~/.claude-<org>/.claude.json`, never at `$HOME/.claude.json` (that one belongs to the
 default profile only, regardless of which profile you're currently `cd`'d into).
-| **Copy** | `apps/cursor/settings.json`, `apps/cursor/mcp.json`, `apps/sublime/*`, `apps/docker/daemon.json`, `apps/iterm2/Wandercode.json` | The owning app rewrites its own file, so a symlink would let app noise flow straight into a public repo. Plain overwrite either direction is safe: these files carry no secrets. |
+| **Copy** | `apps/cursor/settings.json`, `apps/cursor/mcp.json`, `apps/codex/hooks.json`, `apps/sublime/*`, `apps/docker/daemon.json`, `apps/iterm2/Wandercode.json` | The owning app rewrites its own file, so a symlink would let app noise flow straight into a public repo. Plain overwrite either direction is safe: these files carry no secrets. |
+| **Symlink (shared script)** | `.claude/user/hooks/claude-mem-pid-guard.sh` -> `~/.codex/hooks/claude-mem-pid-guard.sh` | Codex's hook config shells out to the same PID-guard script Claude Code's profiles use (see the `CLAUDE_MEM_DATA_DIR` fallback below) -- symlinked, not duplicated, so the fix only ever needs to land in one place. Found and fixed a real drift here: the live `~/.codex/hooks/` copy predated this symlink and was missing that fallback entirely. |
 | **Merge (per Claude profile)** | `.claude/user/settings.json` (installs to `<profile>/settings.json`) | Claude Code itself writes to this file (permission grants, plugin state). A plain copy on push would erase legitimate accumulated state; a plain copy on pull would drag that noise into the repo. Deep-merge, repo wins on conflicts, machine-only keys survive a push. Applied per profile, same set as the symlinks above. |
 | **`defaults` scalar** | `apps/iterm2/app-prefs.json` (`TabStyleWithAutomaticOption`, i.e. Appearance > Theme) | A handful of app-level `defaults(1)` keys that aren't part of any dynamic profile. Read/written via `defaults read/write com.googlecode.iterm2 <key>` (not a raw plist edit) so cfprefsd stays authoritative instead of racing a running iTerm2. Key list is hardcoded in `sync.py` so a first `--pull` on a machine without the template can still discover them. |
 
@@ -55,6 +56,68 @@ hardcoded Guid (cloned by hand from an earlier machine), iTerm2 reports a
 "duplicate Guid" warning on launch after a `--push`. That local profile isn't
 managed by this skill: give it a fresh Guid by hand (any UUID, iTerm2 doesn't
 care which) rather than touching `Wandercode.json`, then restart iTerm2.
+
+## Cursor and Codex can't get per-org profile isolation the way the terminal does
+
+`.zshrc`'s `chpwd` hook (step 7) swaps `CLAUDE_CONFIG_DIR`/`CLAUDE_MEM_DATA_DIR`
+per shell based on `$PWD` -- that only works because a terminal re-sources
+`.zshrc` on every `cd`. Cursor and Codex are GUI apps launched from the Dock,
+Spotlight, or a recent-projects list, not `cursor .`/`codex .` from an
+already-`cd`'d shell, so their own process env is whatever it was at launch --
+never workspace-aware, regardless of which project window is focused. Their
+integrated terminal panels *do* re-source `.zshrc` and show the right
+`CLAUDE_CONFIG_DIR` for the open project, but that panel is a separate process
+from the app's own MCP/plugin host, which is what actually calls claude-mem.
+
+Consequence: neither app's claude-mem integration can be made to follow the
+open project's org profile via env-var inference -- there is no dynamic
+`${env:CLAUDE_CONFIG_DIR}` trick that works here, so don't build one. Even
+launching via CLI (`cursor .` from an already-`cd`'d shell) doesn't help:
+both apps use a single-instance model, so once one window is open the whole
+app's env is fixed at whichever launch started it, regardless of which
+directory a later `cursor .` was run from -- confirmed by inspecting a
+running Cursor process's env directly (no `CLAUDE_CONFIG_DIR` in it at all,
+just `HOME`).
+
+That ruled out making Cursor's `claude-mem` MCP entry profile-aware, which
+left pinning it to the default profile as the only alternative -- but pinning
+turned out to be worse than it looks: claude-mem's worker doesn't just
+resolve a script path from `CLAUDE_CONFIG_DIR`, it authenticates as whatever
+account that config dir logs into (`CLAUDE_MEM_CLAUDE_AUTH_METHOD:
+"subscription"`, piggybacking the Claude Code login, not a separate API key).
+Pinned to the default profile, every org-project session in Cursor would
+silently bill claude-mem's summarization calls to the *personal* subscription
+and write those observations into the *personal* `~/.claude-mem` DB --
+exactly the cross-account commingling the whole `~/.claude-mem-<org>` split
+(see step 7) exists to prevent, just via a path that's easy to forget
+carries memory/billing side effects at all.
+
+So `claude-mem` is **not present** in `apps/cursor/mcp.json` -- removed
+rather than pinned. Cursor keeps `excalidraw-architect` and `github`; memory
+recall/capture stays a Claude Code CLI feature, where per-org isolation
+already works correctly via `.zshrc`'s `chpwd` hook.
+
+Codex's claude-mem integration is a native plugin (`config.toml`'s
+`[plugins."claude-mem@claude-mem-local"]`), not an MCP entry -- the only
+piece of it tracked here is the housekeeping PID-guard hook
+(`apps/codex/hooks.json`), which has no billing/data-dir behavior of its
+own. The plugin's *own* bundled hooks (cached under
+`~/.codex/plugins/cache/claude-mem-local/`, not repo-tracked) turned out to
+carry the same leak, worse: `SessionStart`/`UserPromptSubmit`/`PreToolUse`/
+`PostToolUse`/`Stop` all independently resolve `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`
+themselves, and `PostToolUse`/`Stop` are the ones that actually spend money
+(memory writes, LLM summarization) -- so nearly every tool call in a Codex
+session on an org project would bill the personal subscription and write to
+the personal `~/.claude-mem` DB. Disabled via `enabled = false` on that
+plugin in `config.toml` directly (a live, machine-only edit -- the file
+isn't repo-tracked, see above) rather than left running with the leak.
+
+If a specific org project genuinely needs Cursor or Codex to talk to that
+org's claude-mem/plugin install, the fix is a workspace-local override
+(Cursor supports a project-level `.cursor/mcp.json` that merges with the
+global one) committed to *that project's own repo* -- not here, since it would
+need to name the org to route correctly, which this public repo's scope rule
+forbids.
 
 ## Commands
 
@@ -406,7 +469,11 @@ special case.
 - **A new app config to track**: add it to `apps/<tool>/`, then add one line to
   the right list in `sync.py` (`SYMLINKS`, `COPIES`, `TRIMMED_COPIES`, or
   `MERGES`, per the table above). Symlink only if the app never rewrites the
-  file itself.
+  file itself. If the file mixes hand-edited scalars with the app's own
+  accumulated state (installs, per-project trust, caches) the way Codex's
+  `config.toml` does, don't force the whole file into one bucket -- pull out
+  just the hand-edited part if it's cleanly separable (see `apps/codex/hooks.json`),
+  or leave the whole thing untracked if it isn't.
 - **A skill to promote from a project repo**: not this skill's job. See
   `README.md`'s note on skill promotion; it's a deliberate, occasional decision,
   not something to automate into a sync loop.

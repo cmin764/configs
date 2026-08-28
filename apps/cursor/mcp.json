@@ -13,12 +13,6 @@
         "FASTMCP_SHOW_SERVER_BANNER": "0"
       }
     },
-    "claude-mem": {
-      "command": "node",
-      "args": [
-        "${env:HOME}/.claude/plugins/marketplaces/thedotmack/plugin/scripts/mcp-server.cjs"
-      ]
-    },
     "github": {
       "url": "https://api.githubcopilot.com/mcp/",
       "headers": {

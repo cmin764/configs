@@ -47,6 +47,7 @@ restore order, including iTerm2 and the optional MCP servers:
 | `.claude/user/hooks/` | `~/.claude/hooks/` (symlinked) | Hook scripts referenced from `settings.json` |
 | `.claude/skills/` | `~/.claude/skills/` (symlinked) | Reusable skills, see [`.claude/skills/README.md`](.claude/skills/README.md) |
 | `apps/cursor/` | Cursor's settings, MCP config, and CLI agent config | |
+| `apps/codex/hooks.json` | `~/.codex/hooks.json` | Codex's hook wiring (rtk, claude-mem). `config.toml` isn't tracked, see `config-sync`'s SKILL.md |
 | `apps/iterm2/` | iTerm2 profile + a `defaults write` script for globals | |
 | `apps/sublime/`, `apps/docker/` | One small preferences file each | |
 | `reference/` | n/a | Source material referenced from `CLAUDE.md` or imported into a design tool, not installed anywhere |
