@@ -164,6 +164,19 @@ python3 .claude/skills/config-sync/scripts/sync.py --selftest  # deep_merge/diff
 ```
 
 All four are idempotent. `--status` never writes anything; run it first.
+It also flags any `~/.claude-mem-<org>` profile still sharing its data
+dir, worker port, or server-url with the default profile as `[LEAK RISK]`
+-- see step 7's claude-mem isolation block, which is what this is
+checking for. That's a static, point-in-time check; `claude-mem-pid-guard.sh`
+(symlinked into every profile's `hooks/`, wired into `SessionStart` and
+`UserPromptSubmit` in `.claude/user/settings.json`) backs it up at
+runtime -- on every prompt it asks the worker actually listening on this
+profile's port for its own `/api/health`, and warns loudly if that
+worker's `workerPath` (its source file, which lives under
+`<profile>/plugins/cache/...`) doesn't belong to this session's
+`CLAUDE_CONFIG_DIR`. That catches the case `--status` can't: a stale
+worker process from before a settings fix, or a port collision that
+happens transiently between two profiles' cold starts.
 
 ## What `--pull` deliberately refuses to automate
 
