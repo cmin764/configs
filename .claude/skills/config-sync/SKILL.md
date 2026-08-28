@@ -282,25 +282,23 @@ from "everything else in the repo gets installed."
    CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add DietrichGebert/ponytail
    CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install claude-mem@thedotmack
    CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install ponytail@ponytail
-   ```
-   Skip the marketplace/install block if this org doesn't need
-   claude-mem/ponytail. If it needs `tally`/`linear`/`lucid` MCP too, repeat
-   the commands in step 9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>`
-   prefix -- also per profile, for the same reason.
 
-   **If claude-mem is installed here, it needs its own data dir too, or its
-   worker silently bills the wrong account.** claude-mem's worker is a
-   machine-wide singleton keyed by data dir (default `~/.claude-mem`,
-   port `37701`) that spawns SDK calls billed to whatever
-   `CLAUDE_CONFIG_DIR` its own launching env carried -- with no
-   `CLAUDE_MEM_DATA_DIR` set, every profile's claude-mem shares one worker,
-   and whichever profile happens to boot it first pays for every other
-   profile's memory generation until reboot. `.zshrc`'s
-   `_claude_config_dir_by_pwd` hook already exports
-   `CLAUDE_MEM_DATA_DIR=~/.claude-mem-<org>` alongside `CLAUDE_CONFIG_DIR`
-   whenever that directory exists -- create it and give it a distinct
-   worker port so the two workers don't collide:
-   ```
+   # claude-mem is installed but NOT yet isolated -- run this in the SAME
+   # sitting, never as a separate/optional step, or its worker silently
+   # shares the default ~/.claude-mem data dir/port and bills the wrong
+   # account (confirmed live 2026-08-28: an org profile went unpatched
+   # between install and this block, and its worker ran against the
+   # default port for hours before anyone noticed). claude-mem's worker is
+   # a machine-wide singleton keyed by data dir (default `~/.claude-mem`,
+   # port `37701`) that spawns SDK calls billed to whatever
+   # `CLAUDE_CONFIG_DIR` its own launching env carried -- with no
+   # `CLAUDE_MEM_DATA_DIR` set, every profile's claude-mem shares one
+   # worker, and whichever profile boots it first pays for every other
+   # profile's memory generation until reboot. `.zshrc`'s
+   # `_claude_config_dir_by_pwd` hook already exports
+   # `CLAUDE_MEM_DATA_DIR=~/.claude-mem-<org>` alongside `CLAUDE_CONFIG_DIR`
+   # whenever this directory exists -- pick a free port per additional org
+   # profile (37711, 37721, ...) if there's ever more than one:
    mkdir -p ~/.claude-mem-<org>
    cp ~/.claude-mem/settings.json ~/.claude-mem-<org>/settings.json
    python3 -c "
@@ -314,8 +312,15 @@ from "everything else in the repo gets installed."
    json.dump(d, open(p, 'w'), indent=2)
    "
    ```
-   Pick a free port per additional org profile (`37711`, `37721`, ...) if
-   there's ever more than one.
+   Skip the whole block (marketplace/install AND the isolation patch right
+   after it) if this org doesn't need claude-mem/ponytail -- but never
+   install claude-mem without immediately running its isolation patch.
+   `python3 .claude/skills/config-sync/scripts/sync.py --status` flags any
+   `~/.claude-mem-<org>` still sharing the default's data dir/port as
+   `[LEAK RISK]`, so a skipped patch doesn't stay silent. If this org needs
+   `tally`/`linear`/`lucid` MCP too, repeat the commands in step 9 with the
+   same `CLAUDE_CONFIG_DIR=~/.claude-<org>` prefix -- also per profile, for
+   the same reason.
 
    **Known gap, not fixed here because it's currently inert:**
    `CLAUDE_MEM_SERVER_URL`/`CLAUDE_MEM_SERVER_BETA_URL` default to a port

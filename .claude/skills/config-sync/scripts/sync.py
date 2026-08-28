@@ -361,6 +361,33 @@ def sync_iterm2_app_prefs(mode):
         print(f"  pulled iterm2 app prefs -> {ITERM2_APP_PREFS_REL}")
 
 
+def check_claude_mem_isolation():
+    """Status-only: an org's ~/.claude-mem-<org>/settings.json must not still
+    point at the default profile's data dir/port, or its worker silently
+    shares data and billing with the default profile instead of isolating
+    (confirmed live 2026-08-28 -- see SKILL.md step 7's claude-mem block).
+    Not a sync target itself (claude-mem, not this repo, owns these files),
+    just a tripwire so the leak is visible in --status instead of silent."""
+    default_settings = HOME / ".claude-mem" / "settings.json"
+    if not default_settings.exists():
+        return
+    default = json.loads(default_settings.read_text())
+    default_dir = default.get("CLAUDE_MEM_DATA_DIR")
+    default_port = default.get("CLAUDE_MEM_WORKER_PORT")
+    for org_dir in sorted(HOME.glob(".claude-mem-*")):
+        settings = org_dir / "settings.json"
+        if not settings.exists():
+            continue
+        org = json.loads(settings.read_text())
+        if org.get("CLAUDE_MEM_DATA_DIR") == default_dir or \
+                org.get("CLAUDE_MEM_WORKER_PORT") == default_port:
+            print(f"[LEAK RISK]    {org_dir.name}/settings.json still shares "
+                  f"the default profile's data dir/port -- fix per SKILL.md "
+                  f"step 7's claude-mem isolation block")
+        else:
+            print(f"[isolated]     {org_dir.name}/settings.json")
+
+
 def run(mode):
     print(f"== config-sync --{mode} ==")
     for src, dst in SYMLINKS:
@@ -377,6 +404,8 @@ def run(mode):
     sync_iterm2_app_prefs(mode)
     for src, dst, drop_keys in TRIMMED_COPIES:
         sync_trimmed(src, dst, drop_keys, mode)
+    if mode == "status":
+        check_claude_mem_isolation()
 
 
 def main():
