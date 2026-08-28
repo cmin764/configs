@@ -309,29 +309,31 @@ from "everything else in the repo gets installed."
    d['CLAUDE_MEM_WORKER_PORT'] = '37711'
    d['CLAUDE_MEM_QUEUE_REDIS_PREFIX'] = 'claude_mem_37711'
    d['CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH'] = '$HOME/.claude-mem-<org>/transcript-watch.json'
+   d['CLAUDE_MEM_SERVER_URL'] = 'http://127.0.0.1:37911'
+   d['CLAUDE_MEM_SERVER_BETA_URL'] = 'http://127.0.0.1:37911'
    json.dump(d, open(p, 'w'), indent=2)
    "
    ```
+   The `SERVER_URL`/`SERVER_BETA_URL` pair is patched too even though it's
+   currently inert (`CLAUDE_MEM_RUNTIME` defaults to `worker`, and nothing
+   listens on that port in worker mode) -- both default to a port derived
+   from the OS uid (`37877 + uid%100`), not from the data dir, so *every*
+   profile on this machine computes the identical default regardless of
+   `CLAUDE_MEM_DATA_DIR`. Patching it now costs nothing and removes a
+   collision that would otherwise wait silently for the day `CLAUDE_MEM_RUNTIME`
+   switches to `server` (a future claude-mem default, or a deliberate opt-in).
+   Pick a free port block per additional org profile (`377{1,2,...}1` for
+   worker, `379{1,2,...}1` for server) if there's ever more than one.
+
    Skip the whole block (marketplace/install AND the isolation patch right
    after it) if this org doesn't need claude-mem/ponytail -- but never
    install claude-mem without immediately running its isolation patch.
    `python3 .claude/skills/config-sync/scripts/sync.py --status` flags any
-   `~/.claude-mem-<org>` still sharing the default's data dir/port as
-   `[LEAK RISK]`, so a skipped patch doesn't stay silent. If this org needs
+   `~/.claude-mem-<org>` still sharing the default's data dir/port/server-url
+   as `[LEAK RISK]`, so a skipped patch doesn't stay silent. If this org needs
    `tally`/`linear`/`lucid` MCP too, repeat the commands in step 9 with the
    same `CLAUDE_CONFIG_DIR=~/.claude-<org>` prefix -- also per profile, for
    the same reason.
-
-   **Known gap, not fixed here because it's currently inert:**
-   `CLAUDE_MEM_SERVER_URL`/`CLAUDE_MEM_SERVER_BETA_URL` default to a port
-   derived from the OS uid (`37877 + uid%100`), not from the data dir --
-   every profile on this machine computes the *same* default regardless of
-   `CLAUDE_MEM_DATA_DIR`, so if `CLAUDE_MEM_RUNTIME` is ever switched from
-   its default `worker` to `server`, two profiles would collide on that
-   port the same way the worker did before this fix. Harmless today only
-   because nothing listens on it in the default `worker` runtime -- revisit
-   if a future claude-mem version defaults to the server runtime, or if you
-   deliberately opt into it.
 
    Existing profiles already sharing one worker
    need this fix too, plus a one-time purge of the other org's project rows

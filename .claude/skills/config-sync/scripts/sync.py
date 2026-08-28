@@ -372,18 +372,18 @@ def check_claude_mem_isolation():
     if not default_settings.exists():
         return
     default = json.loads(default_settings.read_text())
-    default_dir = default.get("CLAUDE_MEM_DATA_DIR")
-    default_port = default.get("CLAUDE_MEM_WORKER_PORT")
+    shared_keys = ["CLAUDE_MEM_DATA_DIR", "CLAUDE_MEM_WORKER_PORT",
+                   "CLAUDE_MEM_SERVER_URL", "CLAUDE_MEM_SERVER_BETA_URL"]
     for org_dir in sorted(HOME.glob(".claude-mem-*")):
         settings = org_dir / "settings.json"
         if not settings.exists():
             continue
         org = json.loads(settings.read_text())
-        if org.get("CLAUDE_MEM_DATA_DIR") == default_dir or \
-                org.get("CLAUDE_MEM_WORKER_PORT") == default_port:
-            print(f"[LEAK RISK]    {org_dir.name}/settings.json still shares "
-                  f"the default profile's data dir/port -- fix per SKILL.md "
-                  f"step 7's claude-mem isolation block")
+        clashes = [k for k in shared_keys if org.get(k) == default.get(k)]
+        if clashes:
+            print(f"[LEAK RISK]    {org_dir.name}/settings.json shares "
+                  f"{', '.join(clashes)} with the default profile -- fix "
+                  f"per SKILL.md step 7's claude-mem isolation block")
         else:
             print(f"[isolated]     {org_dir.name}/settings.json")
 
