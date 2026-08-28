@@ -73,6 +73,16 @@ printf '{"consecutiveFailures": 1, "lastErrorMessage": "flake"}\n' > "$HOME/.cla
 run "1 failure is not worth a warning"                      -           $ORG
 rm -f "$HOME/.claude-mem-org/observer-health.json"
 
+# Auth errors never touch that counter (verified live); the worker log line is
+# the signal, and only when it postdates the current worker's boot.
+mkdir -p "$HOME/.claude-mem-org/logs"
+L="$HOME/.claude-mem-org/logs/claude-mem-2026-01-01.log"
+printf '[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=1}\n[x] [ERROR] [PARSER] SDK authentication failed; run /login {preview=Failed to authenticate. API Error: 401 OAuth access token is invalid.}\n' > "$L"
+run "auth failure after boot -> AUTH FAILING with detail"   'AUTH FAILING.*401 OAuth access token is invalid' $ORG
+printf '[x] [ERROR] [PARSER] SDK authentication failed {preview=401 OAuth access token is invalid.}\n[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=2}\n[x] [INFO ] [DB    ] STORED | obsIds=[1]\n' > "$L"
+run "auth failure before latest boot -> recovered, quiet"   -           $ORG
+rm -rf "$HOME/.claude-mem-org/logs"
+
 # Port resolution order must mirror claude-mem's own: env > settings.json > uid default.
 probe() {  # probe <name> <expected-port> [env assignments...]
   local name=$1 port=$2; shift 2

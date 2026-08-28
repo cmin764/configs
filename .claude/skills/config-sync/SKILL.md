@@ -370,11 +370,17 @@ from "everything else in the repo gets installed."
      path is a hardcoded label upstream -- the file it actually read is the
      org data dir's, the default one didn't exist), stored real
      observations, and kept doing so with a planted default-profile login
-     in the keychain. Setup-tokens expire after roughly a year and can't be
-     validated server-side, so the pid-guard hook also surfaces claude-mem's
-     own `observer-health.json` failure counter -- an expired token shows up
-     as "N consecutive SDK failures" on the next prompt instead of silently
-     dead memory.
+     in the keychain. Also verified the failure side by corrupting the
+     token: the SDK child hangs about 3 minutes, then the worker logs
+     `SDK authentication failed ... 401 OAuth access token is invalid` and
+     parks the batch -- no fallback to the keychain, no observations, and
+     **no change to claude-mem's `observer-health.json` failure counter**
+     (auth errors bypass it). Setup-tokens expire after roughly a year and
+     can't be validated server-side, so the pid-guard hook watches for
+     that log line (only after the current worker's boot, so a fixed token
+     plus a worker restart clears it) and prints `AUTH FAILING` on the next
+     prompt instead of leaving memory silently dead. Restoring the token
+     and killing the worker resumed observations immediately.
    - **`ANTHROPIC_API_KEY=<Console key>`** -- metered API billing on
      whichever Console org issued it (prepaid credits required). The
      verifiable option when the client has a Console org and wants memory
