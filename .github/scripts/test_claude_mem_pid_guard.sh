@@ -77,10 +77,22 @@ rm -f "$HOME/.claude-mem-org/observer-health.json"
 # the signal, and only when it postdates the current worker's boot.
 mkdir -p "$HOME/.claude-mem-org/logs"
 L="$HOME/.claude-mem-org/logs/claude-mem-2026-01-01.log"
-printf '[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=1}\n[x] [ERROR] [PARSER] SDK authentication failed; run /login {preview=Failed to authenticate. API Error: 401 OAuth access token is invalid.}\n' > "$L"
+printf '[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=1}\n[x] [ERROR] [PARSER] [session-1] SDK authentication failed; run /login {preview=Failed to authenticate. API Error: 401 OAuth access token is invalid.}\n' > "$L"
 run "auth failure after boot -> AUTH FAILING with detail"   'AUTH FAILING.*401 OAuth access token is invalid' $ORG
-printf '[x] [ERROR] [PARSER] SDK authentication failed {preview=401 OAuth access token is invalid.}\n[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=2}\n[x] [INFO ] [DB    ] STORED | obsIds=[1]\n' > "$L"
+FAILLINE='[x] [ERROR] [PARSER] [session-1] SDK authentication failed; run /login {preview=Failed to authenticate. API Error: 401 OAuth access token is invalid.}'
+printf '%s\n[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=2}\n[x] [INFO ] [DB    ] STORED | obsIds=[1]\n' "$FAILLINE" > "$L"
 run "auth failure before latest boot -> recovered, quiet"   -           $ORG
+printf '[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=2}\n%s\n[x] [INFO ] [DB    ] [session-1] STORED | obsIds=[2]\n' "$FAILLINE" > "$L"
+run "auth failure followed by a stored observation -> quiet" -          $ORG
+# claude-mem's classifier is a heuristic on the model's prose and misfires when
+# the summarized work is ABOUT authentication (seen live 2026-08-28): without
+# the SDK's real error text the line is not a failure.
+printf '[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=3}\n[x] [ERROR] [PARSER] [session-1] SDK authentication failed; run /login {outputClass=prose, preview=This session has completed a comprehensive suite of auth tests}\n' > "$L"
+run "parser misclassifying prose about auth -> quiet"      -           $ORG
+# claude-mem logs the tool payloads it observes; a developer grepping the log
+# for the failure phrase must not trip the detector (also seen live).
+printf '[x] [INFO ] [SYSTEM] HTTP server started {port=37711, pid=3}\n[x] [INFO ] [QUEUE ] ENQUEUED | tool=Bash(grep -E "SDK authentication failed.*API Error: 401" log) | depth=1\n' > "$L"
+run "phrase inside an observed command -> not an auth failure" -        $ORG
 rm -rf "$HOME/.claude-mem-org/logs"
 
 # Port resolution order must mirror claude-mem's own: env > settings.json > uid default.

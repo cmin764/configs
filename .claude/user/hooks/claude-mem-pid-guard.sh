@@ -72,11 +72,21 @@ fi
 # corrupting the .env token: the SDK child hung ~3 minutes, then the worker
 # logged "SDK authentication failed ... 401 OAuth access token is invalid"
 # and parked the batch with consecutiveFailures still 0. The log line is the
-# only reliable signal. Only lines after the current worker's boot count, so
-# fixing the token and restarting clears the warning.
+# only reliable signal -- with two qualifications learned the hard way:
+#  - claude-mem's "SDK authentication failed" classification is a heuristic
+#    on the model's text and misfires on ordinary prose that happens to
+#    discuss authentication (seen live 2026-08-28), so the line must also
+#    carry the SDK's actual error text ("API Error: 401").
+#  - claude-mem logs every tool payload it observes, so the match is anchored
+#    to the log's own "[time] [LEVEL] [AREA]" prefix rather than free text.
+# A worker boot or any later stored observation clears the state: fixing the
+# token and restarting, or the next successful summary, ends the warning.
 latest_log=$(ls -t "$MEM_DIR"/logs/claude-mem-*.log 2>/dev/null | head -1)
 if [ -n "$latest_log" ]; then
-  auth_fail=$(awk '/HTTP server started/ {hit=""; next} /SDK authentication failed|401 OAuth access token is invalid/ {hit=$0} END {print hit}' "$latest_log")
+  auth_fail=$(awk '/^\[[^]]*\] \[INFO \] \[SYSTEM\] HTTP server started/ {hit=""; next}
+                   /^\[[^]]*\] \[INFO \] \[DB    \].*STORED/ {hit=""; next}
+                   /^\[[^]]*\] \[ERROR\] \[PARSER\].*SDK authentication failed.*(API Error: 401|Failed to authenticate)/ {hit=$0}
+                   END {print hit}' "$latest_log")
   if [ -n "$auth_fail" ]; then
     detail=$(printf '%s' "$auth_fail" | grep -oE '401[^}]*' | head -1)
     echo "claude-mem: AUTH FAILING -- the worker's SDK calls are being rejected (${detail:-see $latest_log}) and observations are parked, not stored. If this profile authenticates via $ENV_FILE, the token is invalid or expired: regenerate it with 'claude setup-token' under this CLAUDE_CONFIG_DIR, fix $ENV_FILE, then kill the worker so it respawns." >&2

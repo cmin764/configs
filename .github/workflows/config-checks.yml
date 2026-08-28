@@ -25,3 +25,6 @@ jobs:
 
       - name: claude-mem-pid-guard hook (shimmed security/curl, every leak state)
         run: bash .github/scripts/test_claude_mem_pid_guard.sh
+
+      - name: sync.py --new-profile end to end (throwaway HOME, shimmed claude)
+        run: bash .github/scripts/test_new_profile.sh

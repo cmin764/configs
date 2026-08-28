@@ -160,10 +160,11 @@ python3 .claude/skills/config-sync/scripts/sync.py            # --status, read-o
 python3 .claude/skills/config-sync/scripts/sync.py --restore   # fresh Mac
 python3 .claude/skills/config-sync/scripts/sync.py --push      # repo -> machine
 python3 .claude/skills/config-sync/scripts/sync.py --pull      # machine -> repo
-python3 .claude/skills/config-sync/scripts/sync.py --selftest  # deep_merge/diff asserts
+python3 .claude/skills/config-sync/scripts/sync.py --selftest  # deep_merge/diff/claude-mem asserts
+python3 .claude/skills/config-sync/scripts/sync.py --new-profile <org> [--dry-run]  # step 7, executable
 ```
 
-All four are idempotent. `--status` never writes anything; run it first.
+All of them are idempotent. `--status` never writes anything; run it first.
 It also flags any `~/.claude-mem-<org>` profile still sharing its data
 dir, worker port, or server-url with the default profile as `[LEAK RISK]`
 -- see step 7's claude-mem isolation block, which is what this is
@@ -180,9 +181,14 @@ happens transiently between two profiles' cold starts. Both guards have
 tests CI runs on every push: `--selftest` drives the `--status` check
 against a throwaway HOME, and `.github/scripts/test_claude_mem_pid_guard.sh`
 runs the real hook with `security`/`curl` replaced by PATH shims, one case
-per leak state (default logged in, foreign worker, injected token, stale
-pidfile, port resolution order) -- so nothing here needs a live worker or a
-real keychain to be verified.
+per leak state (default logged in, foreign worker, injected token, auth
+failure in the log, stale pidfile, port resolution order), and
+`.github/scripts/test_new_profile.sh` runs `--new-profile` end to end in a
+throwaway HOME with a shimmed `claude` (dry run creates nothing, real run
+logs in, pushes, installs, allocates ports past an existing org's, writes
+the token to a mode-600 `.env`, and a second run changes no file) -- so
+nothing here needs a live worker, a browser, or a real keychain to be
+verified.
 
 ## What `--pull` deliberately refuses to automate
 
@@ -275,11 +281,12 @@ from "everything else in the repo gets installed."
    hashes `CLAUDE_CONFIG_DIR` into a distinct macOS Keychain entry, so
    pointing it at a separate directory gives a fully separate, full-featured
    account -- not a scoped token. (`claude setup-token` /
-   `CLAUDE_CODE_OAUTH_TOKEN` looked like the obvious lever here but turned
-   out to be a scoped credential that silently drops feature access
-   (confirmed: no Fable model access) and can't even be checked --
-   `claude auth status` doesn't validate a token against the server -- so
-   it's deliberately not used for this.) `.zshrc`'s `chpwd` hook switches
+   `CLAUDE_CODE_OAUTH_TOKEN` looked like the obvious lever here but is a
+   scoped credential that silently drops feature access (confirmed: no
+   Fable model access) and can't be validated -- `claude auth status`
+   doesn't check a token against the server -- so it's not used for the
+   interactive session. It *is* the right tool for claude-mem's background
+   haiku/sonnet calls, see below.) `.zshrc`'s `chpwd` hook switches
    `CLAUDE_CONFIG_DIR` automatically whenever you're under `~/Work/<org>`
    once the profile directory below exists; no profile directory means that
    org just keeps using the default login, nothing else to edit.
@@ -291,58 +298,50 @@ from "everything else in the repo gets installed."
    and deliberately stay separate per org too -- `enabledPlugins` in
    `settings.json` merging in doesn't install anything (same caveat as step
    10), and installing a plugin under one profile must not make it appear in
-   another, so each org gets its own independent installs. Full recipe for a
-   new org profile (`<org>` = lowercased directory name under `~/Work`):
+   another, so each org gets its own independent installs. One command does
+   the whole thing (`<org>` = the `~/Work/<Org>` directory name, any case):
    ```
-   mkdir -p ~/.claude-<org>
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude auth login
-   python3 .claude/skills/config-sync/scripts/sync.py --push
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add thedotmack/claude-mem
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin marketplace add DietrichGebert/ponytail
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install claude-mem@thedotmack
-   CLAUDE_CONFIG_DIR=~/.claude-<org> claude plugin install ponytail@ponytail
+   python3 .claude/skills/config-sync/scripts/sync.py --new-profile <org>            # do it
+   python3 .claude/skills/config-sync/scripts/sync.py --new-profile <org> --dry-run  # audit it
+   ```
+   It runs, in order, skipping any step whose end state already holds (so
+   re-running it on an existing profile is the audit, and `--dry-run`
+   prints `[done]`/`[todo]` per step without touching anything):
+   1. `~/.claude-<org>` created.
+   2. `claude auth login` under it (browser OAuth, a full account).
+   3. `--push`, so the shared skills/hooks/`CLAUDE.md`/`RTK.md`/settings
+      land in the new profile like they did in the default one at step 3.
+   4. claude-mem and ponytail marketplaces added and plugins installed in
+      that profile.
+   5. `~/.claude-mem-<org>/settings.json`: a copy of the default profile's
+      claude-mem settings re-pointed at the org's own data dir, transcript
+      path, worker port and server-url port. **Ports are allocated, not
+      chosen:** the worker port is the lowest one above the default
+      (`37700 + uid % 100`, claude-mem's own formula) that no other
+      `~/.claude-mem*/settings.json` claims and that nothing on the machine
+      currently binds; the server port is worker + 200, checked the same
+      way. The settings files *are* the registry -- nothing else lists
+      ports, and `--status` prints each profile's pair so you never have
+      to open one. This scales to as many orgs as there are ports.
+      claude-mem derives all of these from the OS uid rather than the data
+      dir, so without this every profile lands on the same port -- and the
+      worker is port-first about duplicates ("Port already in use,
+      refusing to start duplicate"), so the second profile silently reuses
+      whichever worker booted first, writing into its data dir and running
+      under its account. Confirmed live 2026-08-28 when a profile was
+      installed without this step. The server-url pair is inert while
+      `CLAUDE_MEM_RUNTIME` stays `worker`, but costs nothing to separate
+      now rather than the day it flips.
+   6. **`~/.claude-mem-<org>/.env` with a setup-token** -- the step the
+      script shouts about, because it needs a browser round-trip and
+      skipping it is the actual leak. Mechanism below.
+   7. Any worker still holding the org's port is killed so the next prompt
+      respawns it with the new settings and credential.
 
-   # claude-mem is installed but NOT yet isolated -- run this in the SAME
-   # sitting, never as a separate/optional step, or its worker silently
-   # shares the default ~/.claude-mem data dir/port and bills the wrong
-   # account (confirmed live 2026-08-28: an org profile went unpatched
-   # between install and this block, and its worker ran against the
-   # default port for hours before anyone noticed). claude-mem's worker is
-   # a machine-wide singleton keyed by data dir (default `~/.claude-mem`,
-   # port `37701`) that spawns SDK calls billed to whatever
-   # `CLAUDE_CONFIG_DIR` its own launching env carried -- with no
-   # `CLAUDE_MEM_DATA_DIR` set, every profile's claude-mem shares one
-   # worker, and whichever profile boots it first pays for every other
-   # profile's memory generation until reboot. `.zshrc`'s
-   # `_claude_config_dir_by_pwd` hook already exports
-   # `CLAUDE_MEM_DATA_DIR=~/.claude-mem-<org>` alongside `CLAUDE_CONFIG_DIR`
-   # whenever this directory exists -- pick a free port per additional org
-   # profile (37711, 37721, ...) if there's ever more than one:
-   mkdir -p ~/.claude-mem-<org>
-   cp ~/.claude-mem/settings.json ~/.claude-mem-<org>/settings.json
-   python3 -c "
-   import json
-   p = '$HOME/.claude-mem-<org>/settings.json'
-   d = json.load(open(p))
-   d['CLAUDE_MEM_DATA_DIR'] = '$HOME/.claude-mem-<org>'
-   d['CLAUDE_MEM_WORKER_PORT'] = '37711'
-   d['CLAUDE_MEM_QUEUE_REDIS_PREFIX'] = 'claude_mem_37711'
-   d['CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH'] = '$HOME/.claude-mem-<org>/transcript-watch.json'
-   d['CLAUDE_MEM_SERVER_URL'] = 'http://127.0.0.1:37911'
-   d['CLAUDE_MEM_SERVER_BETA_URL'] = 'http://127.0.0.1:37911'
-   json.dump(d, open(p, 'w'), indent=2)
-   "
-   ```
-   The `SERVER_URL`/`SERVER_BETA_URL` pair is patched too even though it's
-   currently inert (`CLAUDE_MEM_RUNTIME` defaults to `worker`, and nothing
-   listens on that port in worker mode) -- both default to a port derived
-   from the OS uid (`37877 + uid%100`), not from the data dir, so *every*
-   profile on this machine computes the identical default regardless of
-   `CLAUDE_MEM_DATA_DIR`. Patching it now costs nothing and removes a
-   collision that would otherwise wait silently for the day `CLAUDE_MEM_RUNTIME`
-   switches to `server` (a future claude-mem default, or a deliberate opt-in).
-   Pick a free port block per additional org profile (`377{1,2,...}1` for
-   worker, `379{1,2,...}1` for server) if there's ever more than one.
+   `.zshrc`'s `_claude_config_dir_by_pwd` hook exports `CLAUDE_CONFIG_DIR`
+   and `CLAUDE_MEM_DATA_DIR` for both dirs on every `cd` under
+   `~/Work/<Org>`, so nothing else needs configuring -- but only a *new*
+   shell picks that up, see the end of this step.
 
    **Ports and data dirs isolate the data, not the billing.** Where a
    worker's SDK calls get billed is decided by what OAuth token its `claude`
@@ -377,21 +376,26 @@ from "everything else in the repo gets installed."
      **no change to claude-mem's `observer-health.json` failure counter**
      (auth errors bypass it). Setup-tokens expire after roughly a year and
      can't be validated server-side, so the pid-guard hook watches for
-     that log line (only after the current worker's boot, so a fixed token
-     plus a worker restart clears it) and prints `AUTH FAILING` on the next
-     prompt instead of leaving memory silently dead. Restoring the token
-     and killing the worker resumed observations immediately.
+     that log line and prints `AUTH FAILING` on the next prompt instead of
+     leaving memory silently dead. Two things it has to ignore, both seen
+     live: claude-mem's "SDK authentication failed" classification is a
+     heuristic on the model's prose and fires on ordinary summaries that
+     *talk about* authentication (so the hook requires the SDK's real
+     `API Error: 401` text), and claude-mem logs every observed tool
+     payload verbatim (so the match is anchored to the log's own line
+     prefix). A worker restart or any later stored observation clears the
+     warning. Restoring the token and killing the worker resumed
+     observations immediately.
    - **`ANTHROPIC_API_KEY=<Console key>`** -- metered API billing on
      whichever Console org issued it (prepaid credits required). The
      verifiable option when the client has a Console org and wants memory
      generation on its own invoice.
 
-   Create the file in the same sitting as the rest of the isolation block:
-   ```
-   umask 077 && printf 'ANTHROPIC_AUTH_TOKEN=%s\n' "$(CLAUDE_CONFIG_DIR=~/.claude-<org> claude setup-token)" > ~/.claude-mem-<org>/.env
-   ```
-   then kill that org's worker so it respawns reading it, and confirm
-   `curl -s localhost:<port>/api/health` reports a "Gateway auth token"
+   `--new-profile` writes the file (mode 600) from the token you paste
+   after its `claude setup-token` run; to use a Console key instead, put
+   `ANTHROPIC_API_KEY=...` there by hand before running it and the step
+   reports `[done]`. Either way, after the first prompt in a new shell,
+   `curl -s localhost:<port>/api/health` must report a "Gateway auth token"
    (or "API key") auth method rather than "Claude Code OAuth token".
 
    **Policy until it's fixed upstream: every org profile that runs
@@ -406,27 +410,24 @@ from "everything else in the repo gets installed."
    there means a default-profile token was actually injected, and the hook
    names the PID to kill.
 
-   Skip the whole block (marketplace/install AND the isolation patch right
-   after it) if this org doesn't need claude-mem/ponytail -- but never
-   install claude-mem without immediately running its isolation patch.
-   `python3 .claude/skills/config-sync/scripts/sync.py --status` flags any
-   `~/.claude-mem-<org>` still sharing the default's data dir/port/server-url
-   as `[LEAK RISK]`, so a skipped patch doesn't stay silent. If this org needs
-   `tally`/`linear`/`lucid` MCP too, repeat the commands in step 9 with the
-   same `CLAUDE_CONFIG_DIR=~/.claude-<org>` prefix -- also per profile, for
-   the same reason.
+   `--new-profile` always installs claude-mem and ponytail; an org that
+   wants neither is a manual variant (steps 1-3 by hand), not a flag.
+   `--status` keeps checking the result afterwards: `[LEAK RISK]` for a
+   `~/.claude-mem-<org>` still sharing the default's data dir/port/server-url,
+   or one without an `.env` credential while the default profile is logged
+   in. If this org needs `tally`/`linear`/`lucid` MCP too, repeat the
+   commands in step 9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>`
+   prefix -- also per profile, for the same reason.
 
-   Existing profiles already sharing one worker
-   need this fix too, plus a one-time purge of the other org's project rows
-   out of the personal `~/.claude-mem/claude-mem.db` (back up first,
-   `DELETE FROM observations/session_summaries/sdk_sessions/user_prompts
-   WHERE project = '<name>'`, then `VACUUM`) -- a fresh Mac restore
-   following this step never accumulates that commingling in the first
-   place. After creating the profile or editing its settings, start a new
-   shell (or `source ~/.zshrc` and `cd` out and back into the org
-   directory) and start a fresh Claude Code session there before trusting
-   `CLAUDE_MEM_DATA_DIR` -- an already-running shell or session keeps its
-   env from before the change.
+   A profile that ran unisolated for a while has the other profile's rows
+   in the *default* `~/.claude-mem/claude-mem.db`; purge them once (back up
+   first, `DELETE FROM observations/session_summaries/sdk_sessions WHERE
+   project = '<name>'`, then `VACUUM`). A profile created with
+   `--new-profile` never accumulates that. After creating the profile or
+   editing its settings, start a new shell (or `source ~/.zshrc` and `cd`
+   out and back into the org directory) and a fresh Claude Code session
+   there before trusting `CLAUDE_MEM_DATA_DIR` -- an already-running shell
+   or session keeps its env from before the change.
 
    Cosmetic side effect: `claude doctor` on this new profile will report
    "native installation but config install method is 'not set'" -- the
@@ -482,7 +483,11 @@ from "everything else in the repo gets installed."
     claude plugin install claude-mem@thedotmack
     claude plugin install ponytail@ponytail
     ```
-    `claude plugin list` should then show both as `enabled`. Two more
+    `claude plugin list` should then show both as `enabled`. claude-mem on
+    the *default* profile is optional: its pre-flight (step 7) finds the
+    default login and uses it, which is correct there, so it needs no
+    `.env`. Whether it's installed on the default profile has no bearing
+    on org profiles once they carry their own `.env` credential. Two more
     things worth knowing before expecting the statusline badges to go
     green:
     - **claude-mem's hooks need a JS runtime already on `PATH`** (its

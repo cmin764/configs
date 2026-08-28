@@ -10,6 +10,12 @@ Modes:
              trimmed, iterm2 profile re-exported; merge targets are
              reported only -- never auto-pulled, or the noise we
              deliberately pruned from the template would come right back)
+  --new-profile <org> [--dry-run]
+             create ~/.claude-<org> for a ~/Work/<Org> directory: login,
+             shared config, plugins, an isolated claude-mem data dir on
+             its own ports, and the .env credential that keeps claude-mem
+             off the default profile's login. Every step is skipped when
+             already done, so re-running it is the way to audit a profile.
 
 Stdlib only. Safe to re-run any mode; that repeatability is the test.
 """
@@ -17,9 +23,11 @@ import contextlib
 import getpass
 import io
 import json
+import os
 import plistlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -163,9 +171,9 @@ def _selftest():
             (home / ".claude-mem").mkdir()
             (home / ".claude-mem" / "settings.json").write_text(json.dumps({
                 "CLAUDE_MEM_DATA_DIR": str(home / ".claude-mem"),
-                "CLAUDE_MEM_WORKER_PORT": "37701",
-                "CLAUDE_MEM_SERVER_URL": "http://127.0.0.1:37878",
-                "CLAUDE_MEM_SERVER_BETA_URL": "http://127.0.0.1:37878"}))
+                "CLAUDE_MEM_WORKER_PORT": str(CLAUDE_MEM_DEFAULT_WORKER_PORT),
+                "CLAUDE_MEM_SERVER_URL": f"http://127.0.0.1:{CLAUDE_MEM_DEFAULT_SERVER_PORT}",
+                "CLAUDE_MEM_SERVER_BETA_URL": f"http://127.0.0.1:{CLAUDE_MEM_DEFAULT_SERVER_PORT}"}))
             (home / ".claude-mem-org").mkdir()
             (home / ".claude-mem-org" / "settings.json").write_text(json.dumps(org_settings))
             if env_text is not None:
@@ -174,10 +182,10 @@ def _selftest():
             with contextlib.redirect_stdout(out):
                 check_claude_mem_isolation(home, lambda: logged_in)
             return out.getvalue()
-    isolated = {"CLAUDE_MEM_DATA_DIR": "/x/.claude-mem-org", "CLAUDE_MEM_WORKER_PORT": "37711",
-                "CLAUDE_MEM_SERVER_URL": "http://127.0.0.1:37911",
-                "CLAUDE_MEM_SERVER_BETA_URL": "http://127.0.0.1:37911"}
-    shared = dict(isolated, CLAUDE_MEM_WORKER_PORT="37701")
+    isolated = isolated_claude_mem_settings(
+        {}, Path("/x/.claude-mem-org"), str(CLAUDE_MEM_DEFAULT_WORKER_PORT + 1),
+        str(CLAUDE_MEM_DEFAULT_WORKER_PORT + 1 + CLAUDE_MEM_SERVER_PORT_OFFSET))
+    shared = dict(isolated, CLAUDE_MEM_WORKER_PORT=str(CLAUDE_MEM_DEFAULT_WORKER_PORT))
     r = isolation_report(shared, False)
     assert "[LEAK RISK]" in r and "CLAUDE_MEM_WORKER_PORT" in r, r
     r = isolation_report(isolated, True)
@@ -190,6 +198,44 @@ def _selftest():
     # ...but an .env with only empty placeholders does not.
     r = isolation_report(isolated, True, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\n")
     assert "[LEAK RISK]    default profile" in r, r
+
+    # --new-profile's pure parts: port blocks skip whatever any profile uses,
+    # and the isolated settings touch exactly the six colliding keys.
+    d, off = CLAUDE_MEM_DEFAULT_WORKER_PORT, CLAUDE_MEM_SERVER_PORT_OFFSET
+    free = lambda p: True  # noqa: E731 -- no real sockets in the selftest
+    assert allocate_claude_mem_ports(set(), set(), free) == (str(d + 1), str(d + 1 + off))
+    assert allocate_claude_mem_ports({str(d + 1)}, set(), free) == (str(d + 2), str(d + 2 + off))
+    assert allocate_claude_mem_ports(set(), {str(d + 1 + off)}, free) == (str(d + 2), str(d + 2 + off))
+    assert allocate_claude_mem_ports(set(), set(), lambda p: p != d + 1) == (str(d + 2), str(d + 2 + off))
+    assert allocate_claude_mem_ports(set(), set(), lambda p: p != d + 1 + off) == (str(d + 2), str(d + 2 + off))
+    # ten orgs allocate ten distinct pairs with no overlap between worker and server sides
+    used_w, used_s, seen = set(), set(), set()
+    for _ in range(10):
+        w_, s_ = allocate_claude_mem_ports(used_w, used_s, free)
+        assert w_ not in seen and s_ not in seen, (w_, s_, seen)
+        seen.update({w_, s_}); used_w.add(w_); used_s.add(s_)
+    w, srv = str(d + 1), str(d + 1 + off)
+    s = isolated_claude_mem_settings(
+        {"CLAUDE_MEM_MODEL": "m", "CLAUDE_MEM_WORKER_PORT": str(CLAUDE_MEM_DEFAULT_WORKER_PORT)},
+        Path("/h/.claude-mem-org"), w, srv)
+    assert s["CLAUDE_MEM_MODEL"] == "m" and s["CLAUDE_MEM_WORKER_PORT"] == w
+    assert s["CLAUDE_MEM_DATA_DIR"] == "/h/.claude-mem-org"
+    assert s["CLAUDE_MEM_QUEUE_REDIS_PREFIX"] == f"claude_mem_{w}"
+    assert s["CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH"] == "/h/.claude-mem-org/transcript-watch.json"
+    assert s["CLAUDE_MEM_SERVER_URL"] == s["CLAUDE_MEM_SERVER_BETA_URL"] == f"http://127.0.0.1:{srv}"
+    assert CLAUDE_MEM_CRED_RE.search("ANTHROPIC_AUTH_TOKEN=sk-x\n") and \
+        not CLAUDE_MEM_CRED_RE.search("ANTHROPIC_AUTH_TOKEN=\n# ANTHROPIC_API_KEY=y\n")
+    # The registry is whatever settings.json files exist, minus the profile
+    # being (re)built, with claude-mem's defaults filled in for missing keys.
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        for name, body in (("a", {"CLAUDE_MEM_WORKER_PORT": "40000", "CLAUDE_MEM_SERVER_URL": "http://127.0.0.1:40200"}),
+                           ("b", {}), ("self", {"CLAUDE_MEM_WORKER_PORT": "1"})):
+            (home / f".claude-mem-{name}").mkdir()
+            (home / f".claude-mem-{name}" / "settings.json").write_text(json.dumps(body))
+        uw, us = used_claude_mem_ports(home, exclude=home / ".claude-mem-self")
+        assert uw == {"40000", str(CLAUDE_MEM_DEFAULT_WORKER_PORT)}, uw
+        assert us == {"40200", str(CLAUDE_MEM_DEFAULT_SERVER_PORT)}, us
     print("selftest ok")
 
 
@@ -433,18 +479,19 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
     # A credential in <data-dir>/.env makes claude-mem's pre-flight return
     # before its Keychain lookup, so that profile is immune to the default
     # login below. Same regex the pid-guard hook uses.
-    cred_re = re.compile(r"^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL)=.+",
-                         re.MULTILINE)
+    cred_re = CLAUDE_MEM_CRED_RE
     unprotected = []
     for org_dir in org_dirs:
         org = json.loads((org_dir / "settings.json").read_text())
         clashes = [k for k in shared_keys if org.get(k) == default.get(k)]
+        worker, server = claude_mem_ports(org_dir / "settings.json")
         if clashes:
             print(f"[LEAK RISK]    {org_dir.name}/settings.json shares "
                   f"{', '.join(clashes)} with the default profile -- fix "
                   f"per SKILL.md step 7's claude-mem isolation block")
         else:
-            print(f"[isolated]     {org_dir.name}/settings.json")
+            print(f"[isolated]     {org_dir.name}/settings.json "
+                  f"(worker port {worker}, server port {server})")
         env_file = org_dir / ".env"
         if env_file.exists() and cred_re.search(env_file.read_text()):
             print(f"[isolated]     {org_dir.name}/.env carries its own credential "
@@ -468,16 +515,235 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
                   "claude-mem's OAuth pre-flight to hijack)")
 
 
+CLAUDE_MEM_CRED_RE = re.compile(
+    r"^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL)=.+", re.MULTILINE)
+
+# claude-mem derives its default ports from the OS uid, not from the data
+# dir -- so every profile on one machine computes the same pair, which is
+# the root of the collision --new-profile exists to prevent. Same formulas
+# as worker-service.cjs; the pid-guard hook repeats the worker one in shell.
+_UID = os.getuid() if hasattr(os, "getuid") else 77
+CLAUDE_MEM_DEFAULT_WORKER_PORT = 37700 + _UID % 100
+CLAUDE_MEM_DEFAULT_SERVER_PORT = 37877 + _UID % 100
+# An org's server-mode port is its worker port plus this, so one number per
+# profile is enough to know both. The registry of who has which port is the
+# set of ~/.claude-mem*/settings.json files -- there is no separate list.
+CLAUDE_MEM_SERVER_PORT_OFFSET = 200
+
+
+def _port_bindable(port):
+    with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def claude_mem_ports(settings_path):
+    """(worker, server) port strings a profile's claude-mem settings claim;
+    missing keys fall back to claude-mem's own uid-derived defaults."""
+    d = json.loads(settings_path.read_text())
+    worker = d.get("CLAUDE_MEM_WORKER_PORT") or str(CLAUDE_MEM_DEFAULT_WORKER_PORT)
+    server = (d.get("CLAUDE_MEM_SERVER_URL") or f":{CLAUDE_MEM_DEFAULT_SERVER_PORT}").rsplit(":", 1)[-1]
+    return worker, server
+
+
+def allocate_claude_mem_ports(used_worker, used_server, bindable=_port_bindable):
+    """Lowest worker port above the default that no profile claims and
+    nothing on this machine currently binds, with its server port checked
+    the same way. Sequential, so it scales to as many orgs as there are
+    ports; `--status` lists the result per profile."""
+    port = CLAUDE_MEM_DEFAULT_WORKER_PORT + 1
+    while port + CLAUDE_MEM_SERVER_PORT_OFFSET < 65535:
+        worker, server = str(port), str(port + CLAUDE_MEM_SERVER_PORT_OFFSET)
+        if worker not in used_worker and server not in used_server \
+                and worker not in used_server and server not in used_worker \
+                and bindable(port) and bindable(port + CLAUDE_MEM_SERVER_PORT_OFFSET):
+            return worker, server
+        port += 1
+    raise SystemExit("no free claude-mem port pair left")
+
+
+def isolated_claude_mem_settings(base, mem_dir, worker_port, server_port):
+    """The default profile's claude-mem settings re-pointed at an org's own
+    data dir and ports. These six keys are every place claude-mem would
+    otherwise land on the same file or socket as another profile."""
+    out = dict(base)
+    out.update({
+        "CLAUDE_MEM_DATA_DIR": str(mem_dir),
+        "CLAUDE_MEM_WORKER_PORT": worker_port,
+        "CLAUDE_MEM_QUEUE_REDIS_PREFIX": f"claude_mem_{worker_port}",
+        "CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH": str(mem_dir / "transcript-watch.json"),
+        "CLAUDE_MEM_SERVER_URL": f"http://127.0.0.1:{server_port}",
+        "CLAUDE_MEM_SERVER_BETA_URL": f"http://127.0.0.1:{server_port}",
+    })
+    return out
+
+
+def _claude(config_dir, *args, capture=False):
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config_dir))
+    try:
+        return subprocess.run(["claude", *args], env=env, text=True,
+                              capture_output=capture)
+    except FileNotFoundError:  # no claude binary (CI, or restore step 1 skipped)
+        return subprocess.CompletedProcess(["claude", *args], 127, "", "claude: not found")
+
+
+def used_claude_mem_ports(home, exclude=None):
+    """(worker ports, server ports) every claude-mem profile under `home`
+    claims, except `exclude` -- the registry --new-profile allocates against."""
+    used_w, used_s = set(), set()
+    for other in home.glob(".claude-mem*/settings.json"):
+        if other.parent != exclude:
+            w, s = claude_mem_ports(other)
+            used_w.add(w)
+            used_s.add(s)
+    return used_w, used_s
+
+
+def new_profile(org, dry_run=False, home=HOME):
+    """Interactive, idempotent: everything SKILL.md step 7 used to ask a
+    human to type, in order, each step skipped when its end state already
+    holds. The one step that needs a browser round-trip (the setup-token
+    for claude-mem's .env) is shouted, because skipping it is the leak."""
+    org = org.lower()
+    work = home / "Work"
+    matches = [p for p in work.iterdir() if p.is_dir() and p.name.lower() == org] \
+        if work.is_dir() else []
+    if not matches:
+        raise SystemExit(f"no ~/Work/<dir> matching '{org}' -- .zshrc's chpwd hook "
+                         f"derives the profile from that directory name, so it must "
+                         f"exist first")
+    config_dir = home / f".claude-{org}"
+    mem_dir = home / f".claude-mem-{org}"
+    env_file = mem_dir / ".env"
+    print(f"== config-sync --new-profile {org}{' (dry run)' if dry_run else ''} ==")
+    print(f"   work dir   {matches[0]}\n   profile    {config_dir}\n   claude-mem {mem_dir}")
+
+    def step(label, done, action):
+        if done():
+            print(f"  [done]  {label}")
+        elif dry_run:
+            print(f"  [todo]  {label}")
+        else:
+            print(f"  [....]  {label}")
+            action()
+            print(f"  [{'done' if done() else 'FAIL'}]  {label}")
+
+    step("profile directory", config_dir.is_dir,
+         lambda: config_dir.mkdir(mode=0o700))
+
+    def logged_in():
+        if not config_dir.is_dir():
+            return False
+        r = _claude(config_dir, "auth", "status", capture=True)
+        return r.returncode == 0 and '"loggedIn": true' in r.stdout
+    step("logged in under this profile (browser OAuth, full account)", logged_in,
+         lambda: _claude(config_dir, "auth", "login"))
+
+    step("shared config linked/merged into the profile (the per-profile part of --push)",
+         lambda: (config_dir / "hooks").is_symlink() and (config_dir / "settings.json").exists(),
+         lambda: sync_profile(config_dir, "push"))
+
+    def plugins_installed():
+        r = _claude(config_dir, "plugin", "list", capture=True)
+        return r.returncode == 0 and "claude-mem@thedotmack" in r.stdout and "ponytail@ponytail" in r.stdout
+
+    def install_plugins():
+        for args in (("marketplace", "add", "thedotmack/claude-mem"),
+                     ("marketplace", "add", "DietrichGebert/ponytail"),
+                     ("install", "claude-mem@thedotmack"),
+                     ("install", "ponytail@ponytail")):
+            _claude(config_dir, "plugin", *args)  # re-adding a marketplace is a no-op error
+    step("claude-mem + ponytail plugins installed in this profile", plugins_installed, install_plugins)
+
+    settings = mem_dir / "settings.json"
+    changed = []  # steps that wrote something the running worker can't see
+
+    def mem_isolated():
+        if not settings.exists():
+            return False
+        d = json.loads(settings.read_text())
+        return d.get("CLAUDE_MEM_DATA_DIR") == str(mem_dir) and \
+            d.get("CLAUDE_MEM_WORKER_PORT") not in (None, str(CLAUDE_MEM_DEFAULT_WORKER_PORT))
+
+    def isolate_mem():
+        worker, server = allocate_claude_mem_ports(*used_claude_mem_ports(home, exclude=mem_dir))
+        default = home / ".claude-mem" / "settings.json"
+        base = json.loads(default.read_text()) if default.exists() else {}
+        mem_dir.mkdir(mode=0o700, exist_ok=True)
+        settings.write_text(json.dumps(
+            isolated_claude_mem_settings(base, mem_dir, worker, server), indent=2) + "\n")
+        changed.append("settings")
+        print(f"          worker port {worker}, server port {server}")
+    step("claude-mem data dir isolated on its own ports", mem_isolated, isolate_mem)
+
+    def has_cred():
+        return env_file.exists() and bool(CLAUDE_MEM_CRED_RE.search(env_file.read_text()))
+
+    def write_cred():
+        print("\n  ******************************************************************")
+        print("  *  claude-mem's OAuth pre-flight reads the DEFAULT profile's login  *")
+        print("  *  unless this file carries a credential. Running                    *")
+        print(f"  *    CLAUDE_CONFIG_DIR={config_dir} claude setup-token")
+        print("  *  now -- finish the browser flow, copy the token it prints, paste  *")
+        print("  *  it below (input hidden). Ctrl-C leaves the profile unprotected   *")
+        print("  *  and --status will keep saying so.                                 *")
+        print("  ******************************************************************\n")
+        _claude(config_dir, "setup-token")
+        token = getpass.getpass("  paste the token: ").strip()
+        if not token:
+            print("  no token given -- skipping; re-run --new-profile to finish")
+            return
+        mem_dir.mkdir(mode=0o700, exist_ok=True)
+        env_file.write_text(
+            "# Read by claude-mem before every SDK spawn. A credential here makes it\n"
+            "# skip the Keychain lookup that would otherwise pick up the DEFAULT\n"
+            "# profile's login (see config-sync SKILL.md step 7). Written by\n"
+            "# sync.py --new-profile; regenerate with `claude setup-token` when the\n"
+            "# pid-guard hook reports AUTH FAILING (tokens last about a year).\n"
+            f"ANTHROPIC_AUTH_TOKEN={token}\n")
+        env_file.chmod(0o600)
+        changed.append(".env")
+    step("claude-mem .env credential (keeps billing on THIS profile's account)", has_cred, write_cred)
+
+    def worker_pids():
+        if not settings.exists():
+            return []
+        port = json.loads(settings.read_text()).get("CLAUDE_MEM_WORKER_PORT")
+        r = subprocess.run(["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"], capture_output=True, text=True)
+        return [int(p) for p in r.stdout.split()]
+    # A worker that booted before settings/.env changed keeps the old values
+    # until it dies; a worker that booted after them is fine where it is.
+    step("running worker has seen the current settings and credential",
+         lambda: not changed or not worker_pids(),
+         lambda: [os.kill(p, 15) for p in worker_pids()])
+
+    print("\n  next: open a NEW shell, cd into the work dir, start Claude Code once, then")
+    print("        curl -s localhost:$(python3 -c 'import json;print(json.load(open(\"" + str(settings) + "\"))[\"CLAUDE_MEM_WORKER_PORT\"])')/api/health")
+    print("        must report authMethod 'Gateway auth token' (not 'Claude Code OAuth token').")
+    print("        Optional MCP (linear/lucid/tally) is per profile too -- see SKILL.md step 9.\n")
+    check_claude_mem_isolation(home)
+
+
+def sync_profile(profile_dir, mode):
+    """The per-Claude-profile slice of a sync: shared symlinks plus the
+    settings merge, for one ~/.claude[-<org>] directory."""
+    print(f"-- profile {profile_dir} --")
+    for src, rel in CLAUDE_PROFILE_SYMLINKS:
+        sync_symlink(src, profile_dir / rel, mode)
+    for src, rel in CLAUDE_PROFILE_MERGES:
+        sync_merge(src, profile_dir / rel, mode)
+
+
 def run(mode):
     print(f"== config-sync --{mode} ==")
     for src, dst in SYMLINKS:
         sync_symlink(src, dst, mode)
     for profile_dir in claude_profile_dirs():
-        print(f"-- profile {profile_dir} --")
-        for src, rel in CLAUDE_PROFILE_SYMLINKS:
-            sync_symlink(src, profile_dir / rel, mode)
-        for src, rel in CLAUDE_PROFILE_MERGES:
-            sync_merge(src, profile_dir / rel, mode)
+        sync_profile(profile_dir, mode)
     for src, dst in COPIES:
         sync_copy(src, dst, mode)
     sync_iterm2(mode)
@@ -492,6 +758,12 @@ def main():
     args = sys.argv[1:]
     if "--selftest" in args:
         _selftest()
+        return
+    if "--new-profile" in args:
+        i = args.index("--new-profile")
+        if i + 1 >= len(args) or args[i + 1].startswith("--"):
+            raise SystemExit("usage: sync.py --new-profile <org> [--dry-run]")
+        new_profile(args[i + 1], dry_run="--dry-run" in args)
         return
     mode = "status"
     for flag, name in (("--restore", "restore"), ("--push", "push"), ("--pull", "pull")):
