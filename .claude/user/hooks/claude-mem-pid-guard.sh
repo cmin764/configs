@@ -42,9 +42,30 @@ ACCOUNT="${USER:-$(id -un)}"
 # it's fixed upstream the default profile must stay logged out while any
 # org profile runs claude-mem. This makes a violation loud on the next
 # prompt instead of invisible on the next invoice.
-if [ "$CONFIG_DIR" != "$HOME/.claude" ] && \
+#
+# The pre-flight returns BEFORE the Keychain lookup when <data-dir>/.env (or
+# CLAUDE_MEM_ENV_FILE) carries ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or
+# ANTHROPIC_BASE_URL -- verified 2026-08-28 with a `claude setup-token` value
+# as ANTHROPIC_AUTH_TOKEN: real observations stored, and a planted default
+# login was ignored. With such a credential the default profile may log in.
+ENV_FILE="${CLAUDE_MEM_ENV_FILE:-$MEM_DIR/.env}"
+env_cred=0
+[ -f "$ENV_FILE" ] && grep -qE '^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL)=.+' "$ENV_FILE" && env_cred=1
+if [ "$env_cred" = 0 ] && [ "$CONFIG_DIR" != "$HOME/.claude" ] && \
    security find-generic-password -s "Claude Code-credentials" -a "$ACCOUNT" >/dev/null 2>&1; then
-  echo "claude-mem: LEAK RISK -- the default profile (~/.claude) is logged in. claude-mem reads that unsuffixed Keychain entry at worker spawn and injects it into its SDK calls, so THIS org profile's memory generation bills the DEFAULT account. Run: CLAUDE_CONFIG_DIR=~/.claude claude auth logout, then restart this profile's claude-mem worker." >&2
+  echo "claude-mem: LEAK RISK -- the default profile (~/.claude) is logged in and $ENV_FILE carries no credential. claude-mem reads that unsuffixed Keychain entry at worker spawn and injects it into its SDK calls, so THIS org profile's memory generation bills the DEFAULT account. Either put this org's own ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY in $ENV_FILE, or run: CLAUDE_CONFIG_DIR=~/.claude claude auth logout -- then restart this profile's claude-mem worker." >&2
+fi
+
+# The price of an .env credential is that it can expire (setup-tokens do,
+# after about a year) and nothing upstream says so -- memory generation just
+# stops. claude-mem does keep a failure counter on disk; surface it.
+HEALTH_FILE="$MEM_DIR/observer-health.json"
+if [ -f "$HEALTH_FILE" ]; then
+  fails=$(grep -o '"consecutiveFailures":[[:space:]]*[0-9]*' "$HEALTH_FILE" | grep -o '[0-9]*$')
+  if [ "${fails:-0}" -ge 2 ]; then
+    msg=$(grep -o '"lastErrorMessage":[[:space:]]*"[^"]*"' "$HEALTH_FILE" | cut -d'"' -f4)
+    echo "claude-mem: $fails consecutive SDK failures -- memory generation is dead until fixed (${msg:-no error message}). If this profile authenticates via $ENV_FILE, the token has probably expired: regenerate it with 'claude setup-token' under this CLAUDE_CONFIG_DIR and restart the worker." >&2
+  fi
 fi
 
 # Env wins over settings.json inside claude-mem itself, so mirror that order

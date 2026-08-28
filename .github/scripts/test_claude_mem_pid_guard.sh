@@ -56,6 +56,23 @@ run "org profile, other profile's worker -> MISMATCH" 'MISMATCH'        $ORG SHI
 run "org profile, injected token -> LEAK ACTIVE"      'LEAK ACTIVE.*kill 5432' $ORG SHIM_HEALTH="{$injected}"
 run "org profile, workerPath absent (old claude-mem)" -                 $ORG SHIM_HEALTH='{"pid":1}'
 
+# An .env credential short-circuits claude-mem's Keychain pre-flight, so the
+# default login stops being a leak for that org -- but only a real value does.
+printf 'ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=sk-ant-oat01-test\n' > "$HOME/.claude-mem-org/.env"
+run "org profile, .env token, default logged in -> quiet"   -           $ORG SHIM_DEFAULT_LOGGED_IN=1 SHIM_HEALTH="{$ours}"
+printf 'ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\n' > "$HOME/.claude-mem-org/.env"
+run "org profile, .env empty placeholders -> LEAK RISK"     'LEAK RISK'  $ORG SHIM_DEFAULT_LOGGED_IN=1 SHIM_HEALTH="{$ours}"
+rm -f "$HOME/.claude-mem-org/.env"
+printf 'ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-test\n' > "$HOME/custom.env"
+run "CLAUDE_MEM_ENV_FILE override honoured"                 -           $ORG SHIM_DEFAULT_LOGGED_IN=1 CLAUDE_MEM_ENV_FILE="$HOME/custom.env"
+
+# Expired/failing credentials show up as claude-mem's own failure counter.
+printf '{"consecutiveFailures": 3, "lastErrorMessage": "401 invalid token"}\n' > "$HOME/.claude-mem-org/observer-health.json"
+run "3 consecutive SDK failures -> warns with message"      'consecutive SDK failures.*401 invalid token' $ORG
+printf '{"consecutiveFailures": 1, "lastErrorMessage": "flake"}\n' > "$HOME/.claude-mem-org/observer-health.json"
+run "1 failure is not worth a warning"                      -           $ORG
+rm -f "$HOME/.claude-mem-org/observer-health.json"
+
 # Port resolution order must mirror claude-mem's own: env > settings.json > uid default.
 probe() {  # probe <name> <expected-port> [env assignments...]
   local name=$1 port=$2; shift 2

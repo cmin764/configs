@@ -360,18 +360,44 @@ from "everything else in the repo gets installed."
    `CLAUDE_CONFIG_DIR`. When the default profile is logged out the lookup
    fails, claude-mem "proceeds without token", and the `claude` child does
    its own suffixed lookup -- correct, but only by absence. No claude-mem
-   setting disables the pre-flight; the only mechanical escape is an
-   `ANTHROPIC_API_KEY` in `~/.claude-mem-<org>/.env` (metered API billing
-   instead of the subscription -- a different trade, not a fix).
+   setting disables the pre-flight, but a credential in
+   `~/.claude-mem-<org>/.env` makes it return *before* the keychain lookup.
+   Two credentials work there:
+   - **`ANTHROPIC_AUTH_TOKEN=<output of CLAUDE_CONFIG_DIR=~/.claude-<org>
+     claude setup-token>`** -- keeps billing on the org's Claude
+     subscription. Verified 2026-08-28: the worker reported
+     `authMethod: "Gateway auth token (from ~/.claude-mem/.env)"` (that
+     path is a hardcoded label upstream -- the file it actually read is the
+     org data dir's, the default one didn't exist), stored real
+     observations, and kept doing so with a planted default-profile login
+     in the keychain. Setup-tokens expire after roughly a year and can't be
+     validated server-side, so the pid-guard hook also surfaces claude-mem's
+     own `observer-health.json` failure counter -- an expired token shows up
+     as "N consecutive SDK failures" on the next prompt instead of silently
+     dead memory.
+   - **`ANTHROPIC_API_KEY=<Console key>`** -- metered API billing on
+     whichever Console org issued it (prepaid credits required). The
+     verifiable option when the client has a Console org and wants memory
+     generation on its own invoice.
 
-   **Policy until it's fixed upstream: the default profile stays logged out
-   while any org profile runs claude-mem** (`CLAUDE_CONFIG_DIR=~/.claude
-   claude auth logout`). Two guards make a violation loud instead of
-   silent: `sync.py --status` prints `[LEAK RISK]` whenever the unsuffixed
-   keychain entry exists alongside any `~/.claude-mem-<org>`, and
-   `claude-mem-pid-guard.sh` re-checks the keychain on every prompt and
-   additionally reads the live worker's `/api/health` `ai.authMethod` --
-   "(env, ...)" there means a token was actually injected, and the hook
+   Create the file in the same sitting as the rest of the isolation block:
+   ```
+   umask 077 && printf 'ANTHROPIC_AUTH_TOKEN=%s\n' "$(CLAUDE_CONFIG_DIR=~/.claude-<org> claude setup-token)" > ~/.claude-mem-<org>/.env
+   ```
+   then kill that org's worker so it respawns reading it, and confirm
+   `curl -s localhost:<port>/api/health` reports a "Gateway auth token"
+   (or "API key") auth method rather than "Claude Code OAuth token".
+
+   **Policy until it's fixed upstream: every org profile that runs
+   claude-mem either carries its own `.env` credential, or the default
+   profile stays logged out** (`CLAUDE_CONFIG_DIR=~/.claude claude auth
+   logout`). Two guards make a violation loud instead of silent, and both
+   know about `.env`: `sync.py --status` prints `[isolated] .../.env carries
+   its own credential` per protected org and `[LEAK RISK]` when the
+   unsuffixed keychain entry exists alongside an unprotected one;
+   `claude-mem-pid-guard.sh` re-checks both on every prompt and additionally
+   reads the live worker's `/api/health` `ai.authMethod` -- "(env, ...)"
+   there means a default-profile token was actually injected, and the hook
    names the PID to kill.
 
    Skip the whole block (marketplace/install AND the isolation patch right

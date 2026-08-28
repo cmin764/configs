@@ -18,6 +18,7 @@ import getpass
 import io
 import json
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -156,7 +157,7 @@ def _selftest():
     # check_claude_mem_isolation against a throwaway HOME: the three states
     # it must tell apart are "org shares the default's port/dir", "isolated
     # but the default profile is logged in", and "fully isolated".
-    def isolation_report(org_settings, logged_in):
+    def isolation_report(org_settings, logged_in, env_text=None):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / ".claude-mem").mkdir()
@@ -167,6 +168,8 @@ def _selftest():
                 "CLAUDE_MEM_SERVER_BETA_URL": "http://127.0.0.1:37878"}))
             (home / ".claude-mem-org").mkdir()
             (home / ".claude-mem-org" / "settings.json").write_text(json.dumps(org_settings))
+            if env_text is not None:
+                (home / ".claude-mem-org" / ".env").write_text(env_text)
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 check_claude_mem_isolation(home, lambda: logged_in)
@@ -181,6 +184,12 @@ def _selftest():
     assert "[isolated]     .claude-mem-org" in r and "default profile (~/.claude) is logged in" in r, r
     r = isolation_report(isolated, False)
     assert r.count("[isolated]") == 2 and "LEAK" not in r, r
+    # An .env credential makes the default login irrelevant for that org...
+    r = isolation_report(isolated, True, "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-test\n")
+    assert ".env carries its own credential" in r and "LEAK" not in r, r
+    # ...but an .env with only empty placeholders does not.
+    r = isolation_report(isolated, True, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\n")
+    assert "[LEAK RISK]    default profile" in r, r
     print("selftest ok")
 
 
@@ -421,6 +430,12 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
                    "CLAUDE_MEM_SERVER_URL", "CLAUDE_MEM_SERVER_BETA_URL"]
     org_dirs = [d for d in sorted(home.glob(".claude-mem-*"))
                 if (d / "settings.json").exists()]
+    # A credential in <data-dir>/.env makes claude-mem's pre-flight return
+    # before its Keychain lookup, so that profile is immune to the default
+    # login below. Same regex the pid-guard hook uses.
+    cred_re = re.compile(r"^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL)=.+",
+                         re.MULTILINE)
+    unprotected = []
     for org_dir in org_dirs:
         org = json.loads((org_dir / "settings.json").read_text())
         clashes = [k for k in shared_keys if org.get(k) == default.get(k)]
@@ -430,17 +445,24 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
                   f"per SKILL.md step 7's claude-mem isolation block")
         else:
             print(f"[isolated]     {org_dir.name}/settings.json")
+        env_file = org_dir / ".env"
+        if env_file.exists() and cred_re.search(env_file.read_text()):
+            print(f"[isolated]     {org_dir.name}/.env carries its own credential "
+                  f"(claude-mem's Keychain pre-flight bypassed)")
+        else:
+            unprotected.append(org_dir.name)
     # Ports and data dirs don't cover the auth side: claude-mem's OAuth
     # pre-flight reads the DEFAULT profile's unsuffixed Keychain entry no
     # matter which CLAUDE_CONFIG_DIR spawned it, and injects that token into
     # its SDK calls (mechanism documented in claude-mem-pid-guard.sh). So a
-    # logged-in default profile is itself a leak whenever any org profile
-    # runs claude-mem -- the policy is "default stays logged out".
-    if org_dirs:
+    # logged-in default profile is a leak for every org profile that has no
+    # .env credential of its own.
+    if unprotected:
         if default_logged_in():
-            print("[LEAK RISK]    default profile (~/.claude) is logged in while "
-                  "org claude-mem profiles exist -- their workers will inject "
-                  "its token; run: CLAUDE_CONFIG_DIR=~/.claude claude auth logout")
+            print(f"[LEAK RISK]    default profile (~/.claude) is logged in and "
+                  f"{', '.join(unprotected)} have no .env credential -- their "
+                  f"workers will inject its token; give them one, or run: "
+                  f"CLAUDE_CONFIG_DIR=~/.claude claude auth logout")
         else:
             print("[isolated]     default profile logged out (nothing for "
                   "claude-mem's OAuth pre-flight to hijack)")
