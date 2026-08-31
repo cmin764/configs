@@ -40,7 +40,7 @@ fail() { echo "FAIL $1"; fails=$((fails+1)); }
 
 echo "--- dry run on a profile that doesn't exist yet ---"
 out=$(python3 "$SYNC" --new-profile "acme corp" --dry-run 2>&1)
-[ "$(grep -c '\[todo\]' <<<"$out")" -ge 6 ] && ok "dry run lists the work as [todo]" || fail "dry run: $out"
+[ "$(grep -c '\[todo\]' <<<"$out")" -ge 7 ] && ok "dry run lists the work as [todo]" || fail "dry run: $out"
 [ ! -e "$HOME/.claude-acme corp" ] && ok "dry run created nothing" || fail "dry run created the profile"
 
 echo "--- real run (token piped to the hidden prompt) ---"
@@ -63,6 +63,15 @@ assert s == w + 200 and d["CLAUDE_MEM_SERVER_BETA_URL"].endswith(f":{s}")
 assert d["CLAUDE_MEM_DATA_DIR"] == m and d["CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH"] == f"{m}/transcript-watch.json"
 assert d["CLAUDE_MEM_QUEUE_REDIS_PREFIX"] == f"claude_mem_{w}" and d["CLAUDE_MEM_MODEL"] == "m"
 EOF
+OS="$HOME/Work/Acme Corp/.claude/settings.local.json"
+python3 - "$OS" "$P" "$M" "$DEF_W" <<'EOF' && ok "org-root settings.local.json env fallback written" || fail "org-root env fallback wrong or missing"
+import json, sys
+d = json.load(open(sys.argv[1]))
+p, m, dw = sys.argv[2], sys.argv[3], int(sys.argv[4])
+env = d["env"]
+assert env["CLAUDE_CONFIG_DIR"] == p and env["CLAUDE_MEM_DATA_DIR"] == m
+assert int(env["CLAUDE_MEM_WORKER_PORT"]) >= dw + 2
+EOF
 grep -q '^ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-SHIM$' "$M/.env" && ok ".env carries the pasted token" || fail ".env wrong: $(cat "$M/.env" 2>&1)"
 [ "$(stat -f %Lp "$M/.env" 2>/dev/null || stat -c %a "$M/.env")" = "600" ] && ok ".env is mode 600" || fail ".env mode"
 grep -q '\[isolated\].*\.env carries its own credential' <<<"$out" && ok "--status view reports the new profile protected" || fail "status missing"
@@ -71,7 +80,7 @@ echo "--- second run must be a no-op ---"
 snap() { find "$P" "$M" -type f -not -name '*.log' -exec stat -f '%N %m' {} + 2>/dev/null || find "$P" "$M" -type f -exec stat -c '%n %Y' {} +; }
 before=$(snap); : > "$SHIM_LOG"
 out=$(python3 "$SYNC" --new-profile "acme corp" 2>&1)
-[ "$(grep -c '\[done\]' <<<"$out")" -eq 7 ] && ok "all seven steps [done] on re-run" || fail "re-run: $out"
+[ "$(grep -c '\[done\]' <<<"$out")" -eq 8 ] && ok "all eight steps [done] on re-run" || fail "re-run: $out"
 [ "$before" = "$(snap)" ] && ok "re-run changed no file" || fail "re-run modified files"
 grep -qE 'auth login|setup-token|plugin install' "$SHIM_LOG" && fail "re-run repeated an install/login step" || ok "re-run did not repeat login/install/token"
 

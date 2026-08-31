@@ -680,6 +680,48 @@ def new_profile(org, dry_run=False, home=HOME):
         print(f"          worker port {worker}, server port {server}")
     step("claude-mem data dir isolated on its own ports", mem_isolated, isolate_mem)
 
+    # The .zshrc chpwd hook only exports CLAUDE_CONFIG_DIR/CLAUDE_MEM_DATA_DIR
+    # for an interactive shell that itself cd's under ~/Work/<Org> -- a
+    # headless spawn (a Task/subagent, `claude -p` from a script, cron, CI)
+    # inherits its parent's env directly and never runs .zshrc at all, so it
+    # silently falls back to the default profile: default worker, default
+    # data dir, default keychain billing. Confirmed live 2026-08-31: an
+    # adversarial-review subagent launched from an RPM-Avalon session landed
+    # its observations in the *personal* claude-mem db under a bogus
+    # "<version>"-named project (project-name resolution falls back to the
+    # plugin's own version string when it can't derive one from cwd either).
+    # Claude Code resolves .claude/settings.json from cwd upward regardless
+    # of how the process was launched, so a project-level env block at the
+    # ~/Work/<Org> root closes the gap the shell hook can't reach -- no
+    # shell involved, nothing to bypass.
+    org_settings = matches[0] / ".claude" / "settings.local.json"
+
+    def project_env_isolated():
+        if not (org_settings.exists() and settings.exists()):
+            return False
+        try:
+            env = json.loads(org_settings.read_text()).get("env", {})
+        except (json.JSONDecodeError, OSError):
+            return False
+        port = json.loads(settings.read_text()).get("CLAUDE_MEM_WORKER_PORT")
+        return env.get("CLAUDE_CONFIG_DIR") == str(config_dir) and \
+            env.get("CLAUDE_MEM_DATA_DIR") == str(mem_dir) and \
+            env.get("CLAUDE_MEM_WORKER_PORT") == port
+
+    def isolate_project_env():
+        port = json.loads(settings.read_text())["CLAUDE_MEM_WORKER_PORT"]
+        existing = json.loads(org_settings.read_text()) if org_settings.exists() else {}
+        merged = deep_merge(existing, {"env": {
+            "CLAUDE_CONFIG_DIR": str(config_dir),
+            "CLAUDE_MEM_DATA_DIR": str(mem_dir),
+            "CLAUDE_MEM_WORKER_PORT": port,
+        }})
+        org_settings.parent.mkdir(mode=0o700, exist_ok=True)
+        org_settings.write_text(json.dumps(merged, indent=2) + "\n")
+
+    step(f"{org_settings} env fallback for headless/subagent spawns the shell hook misses",
+         project_env_isolated, isolate_project_env)
+
     def has_cred():
         return env_file.exists() and bool(CLAUDE_MEM_CRED_RE.search(env_file.read_text()))
 

@@ -335,10 +335,30 @@ from "everything else in the repo gets installed."
       installed without this step. The server-url pair is inert while
       `CLAUDE_MEM_RUNTIME` stays `worker`, but costs nothing to separate
       now rather than the day it flips.
-   6. **`~/.claude-mem-<org>/.env` with a setup-token** -- the step the
+   6. **`~/Work/<Org>/.claude/settings.local.json` gets an `env` block**
+      (`CLAUDE_CONFIG_DIR`, `CLAUDE_MEM_DATA_DIR`, `CLAUDE_MEM_WORKER_PORT`,
+      merged in, existing keys untouched) -- the fallback for whatever the
+      next paragraph's shell hook can't reach. A headless spawn (a
+      Task/subagent, `claude -p` from a script, cron, CI) inherits its
+      parent's env directly and never runs `.zshrc`, so with nothing here it
+      silently defaults to the personal profile: default worker, default
+      data dir, default keychain billing. Confirmed live 2026-08-31: an
+      adversarial-review subagent launched from an RPM-Avalon session landed
+      its observations in the *personal* claude-mem db under a bogus
+      `<version>`-named project (project-name resolution falls back to the
+      plugin's own version string when it can't derive one from cwd
+      either). Claude Code resolves `.claude/settings.json` from cwd upward
+      regardless of how the process was launched, so this covers headless
+      spawns the same way the shell hook covers interactive ones -- no
+      shell involved, nothing to bypass. `.zprofile` would NOT have worked
+      here: it's a login-shell-only file (rc-file order is `.zshenv` [every
+      zsh invocation] -> `.zprofile` [login only] -> `.zshrc` [interactive
+      only]), and most headless spawns are neither, or don't go through a
+      shell at all.
+   7. **`~/.claude-mem-<org>/.env` with a setup-token** -- the step the
       script shouts about, because it needs a browser round-trip and
       skipping it is the actual leak. Mechanism below.
-   7. If steps 5 or 6 wrote anything this run, a worker still holding the
+   8. If steps 5, 6, or 7 wrote anything this run, a worker still holding the
       org's port is killed so the next prompt respawns it with the new
       settings and credential; a worker that already booted on them is
       left alone (so the audit re-run never restarts anything).
@@ -427,7 +447,11 @@ from "everything else in the repo gets installed."
    A profile that ran unisolated for a while has the other profile's rows
    in the *default* `~/.claude-mem/claude-mem.db`; purge them once (back up
    first, `DELETE FROM observations/session_summaries/sdk_sessions WHERE
-   project = '<name>'`, then `VACUUM`). A profile created with
+   project = '<name>'`, then `VACUUM`). Watch for a `<version>`-numbered
+   project (e.g. `13.17.1`) in `--status` or the worker's own dashboard --
+   that's the tell for a headless spawn that fell through to the default
+   profile per step 6 above, not a real project name; `sdk_sessions.worker_port`
+   confirms which worker it landed on. A profile created with
    `--new-profile` never accumulates that. After creating the profile or
    editing its settings, start a new shell (or `source ~/.zshrc` and `cd`
    out and back into the org directory) and a fresh Claude Code session
