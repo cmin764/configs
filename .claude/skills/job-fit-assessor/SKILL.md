@@ -54,6 +54,26 @@ specific filenames — read whatever exists that looks like professional backgro
 If the directory contains a profile README (e.g. `username/username` on GitHub), that's
 the primary source.
 
+**Sibling repos.** If the scan root is a personal profile repo (directory basename
+matches the git user's handle, or it's a `username/username` GitHub-profile repo),
+also glob its **parent directory** one level up for sibling repos — a candidate's
+sharpest evidence often lives one directory over, not in the profile repo itself.
+Classify each sibling by its `README.md` header only (cheap — don't full-scan):
+
+- **Portfolio/showcase repo** (README mentions "portfolio"/"projects", or it has a
+  `src/data/*.ts|json` file listing project entries): read that structured data file
+  directly instead of scraping rendered prose. It's usually the freshest, most
+  specific evidence — named platforms, architecture notes, live links — and should
+  outweigh an older CV bullet when the two disagree on depth for the same skill.
+- **Positioning/business-site repo** (a personal consultancy, agency, or product site
+  whose README describes services/offerings): read the README and any `docs/`
+  positioning notes for how the candidate frames their own work — useful for
+  domain-fit judgment and for matching their stated target audience against the JD.
+- Anything else: skip it, don't full-scan unrelated repos.
+
+See `references/profile-extraction.md`, "Sibling / related repos" for the concrete
+pattern and an example schema.
+
 ### 1.2 Uploaded files
 
 If the user has attached files to the conversation, read them:
@@ -71,6 +91,14 @@ web_fetch: https://raw.githubusercontent.com/[username]/[username]/main/README.m
 Check for supporting docs linked from the README and fetch those too.
 
 If the user provides a LinkedIn, portfolio, or personal site URL, fetch it.
+
+**Brochure/aggregator repos.** If the candidate is part of a peer group, community,
+or agency that publishes a compiled profile on their behalf (a repo with per-person
+`sources/*.md` distilled profiles, or an `output/*.pdf` brochure), treat it as a third
+source of truth — it's distilled by someone else, so it surfaces framing and phrasing
+the candidate's own docs don't. It won't always sit in the sibling sweep from 1.1 (it
+may belong to a different organization entirely). If the sibling sweep didn't turn one
+up, ask the user whether one exists before finalizing scores.
 
 ### 1.4 What to extract
 
@@ -198,6 +226,11 @@ The artifact has the detail. The summary is the orientation.
 
 If the assessment has 8+ sections or 15+ items, offer: "Want a static HTML version
 you can print to PDF?"
+
+**Redo requests.** When the user asks to remove a section or exclude certain facts
+(e.g. "don't mention current ongoing roles") on a redo, treat it as a standing
+instruction for the rest of the session, not a one-time edit to the section named —
+re-check every other section for the same excluded facts before republishing.
 
 ---
 

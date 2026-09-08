@@ -27,6 +27,45 @@ Don't assume filenames. Read whatever's present that resembles professional back
 
 ---
 
+## Sibling / related repos
+
+The scan root often isn't the only repo holding candidate evidence — a personal
+profile repo (`username/username`) commonly sits alongside other repos in the same
+parent directory: a portfolio site, a consultancy/business site, a side project.
+Glob the parent directory one level up and read each sibling's `README.md` header
+(cheap classification pass, not a full scan):
+
+**Portfolio/showcase repo** — README mentions "portfolio" or "projects", or the repo
+has a structured data file (`src/data/*.ts`, `*.json`) listing project entries. Read
+that file directly instead of scraping rendered prose. A real example schema:
+
+```ts
+{
+  id: string, title: string, tagline: string, description: string,
+  category: string, complexity: 'low'|'medium'|'high', status: string,
+  tags: string[], company?: string, period?: string,
+  links: { label: string, url: string }[],
+  architectureNotes?: string,   // system-design detail, often richer than the CV
+}
+```
+
+This is usually the freshest, most specific evidence available — named platforms,
+concrete architecture decisions, live deployed links — and should outweigh an older
+CV bullet when the two disagree on depth for the same skill. A CV that says a skill
+is "exposure only" can be flatly contradicted by three live, self-shipped projects
+in a portfolio repo; when that happens, believe the shipped work.
+
+**Positioning/business-site repo** — a personal consultancy, agency, or product site
+whose README describes services or offerings ("Fractional AI Product Strategy",
+"Results as a Service", target industries, methodology). Read the README and any
+`docs/` positioning notes. This is how the candidate frames their own value
+proposition to strangers — useful for domain-fit judgment and for checking whether
+their stated target audience actually overlaps with the JD's company/industry.
+
+Don't full-scan repos that don't match either pattern.
+
+---
+
 ## Uploaded files
 
 If the user attached files, they're at `/mnt/user-data/uploads/`. Read them directly.
@@ -94,6 +133,13 @@ rank lower than things a third party confirmed.
 If a domain or skill area is genuinely absent, record it as an explicit gap rather
 than omitting it. "No public writing on technical leadership" is a legitimate finding.
 Omitting it only hurts the candidate when a gap surfaces in the interview unprepared.
+
+**When sources disagree**
+A prose CV/codex file and a structured project data file (see "Sibling / related
+repos" above) sometimes describe the same skill at different depths — the CV was
+written once and goes stale; a portfolio repo gets touched every time something ships.
+Prefer the structured, more current source when they conflict, and say so in the note
+so the candidate knows which framing to lead with in the interview.
 
 ---
 
