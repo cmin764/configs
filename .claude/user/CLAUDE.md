@@ -89,7 +89,12 @@ question that unblocks work), optimise for their ability to act, not for showing
 - Default to CLIs (`gh`, `curl`, `jq`, etc.) over MCP servers: token-cheap, composable via pipes, already in training data, debuggable without a spec document. Use MCP only when no CLI equivalent exists, the interaction is inherently stateful, or it returns structured output that would need brittle parsing otherwise.
 - Skills define workflow patterns at near-zero token cost; CLIs do the actual work. Don't load a heavyweight tool spec when a shell command does the job.
 - During research and planning, gather information through shell commands first. Fall back to MCP or other integrations only when CLIs can't reach the data.
-- Match model to task when delegating: Haiku for mechanical, well-specified edits and scripts; Sonnet for executing an agreed plan or straight codegen against a clear spec; Opus/Fable for architecture, planning, and decisions where tradeoffs carry weight.
+- Match model and effort to task when delegating:
+  - Haiku, low effort: primitive tool calls, mechanical and well-specified edits, routine deterministic scripts.
+  - Sonnet, low/medium effort: executing an agreed plan, coding tasks, straight codegen against a clear spec.
+  - Opus, high/xhigh effort: architecting solutions, self-reviewing produced changes from multiple angles to surface issues the author's own view would miss.
+  - Fable, high effort: driving the initial planning, orchestration design for how the whole change gets executed. Reach for it sparingly, only for the genuine aha-moment calls that then steer the rest of the work.
+- Exploration and code-search sub-agents (Explore, general-purpose lookups) run on Sonnet at low/medium effort by default; only escalate to Opus when the sub-agent itself is making a design call, not just retrieving.
 
 ## Code Style & Design
 
