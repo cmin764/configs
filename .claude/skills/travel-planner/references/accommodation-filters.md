@@ -1,6 +1,6 @@
 # Accommodation Filters Reference
 
-## Hard filters — instant disqualification
+## Hard filters: instant disqualification
 
 These are non-negotiable. If any apply, skip the listing entirely.
 
@@ -27,7 +27,7 @@ For any stay in a remote or semi-urban area:
 Starlink is the gold standard for rural/island locations. If they don't have
 it, ask for a speed test screenshot. No screenshot = treat as unknown.
 
-## Strong preferences — weighted in ranking
+## Strong preferences: weighted in ranking
 
 **Space**
 - 2 people need separate work and sleep spaces
@@ -46,7 +46,7 @@ it, ask for a speed test screenshot. No screenshot = treat as unknown.
 - Walking distance to a supermarket
 - Within 15 minutes of main transport axis (metro, main road, bus stop)
 - Not on a hillside above the safer flat zone
-- Avoid the immediate party-zone / nightlife nucleus of any city (the specific area varies — research per destination; noise bleeds in regardless of how the listing describes itself)
+- Avoid the immediate party-zone / nightlife nucleus of any city (the specific area varies: research per destination; noise bleeds in regardless of how the listing describes itself)
 
 **Cleaning fee logic**
 - High cleaning fee relative to stay length = negotiate or skip
@@ -68,8 +68,8 @@ it, ask for a speed test screenshot. No screenshot = treat as unknown.
 - [ ] Profile photo and description feel genuine, not AI-generated
 - [ ] Reviews mention specific details (neighborhood, kitchen, noise level)
 - [ ] Calendar recently updated (within 2 weeks)
-- [ ] Exchange type accepted (GuestPoints or reciprocal) — confirm before messaging
-- [ ] Cleaning fee stated upfront — clarify in first message
+- [ ] Exchange type accepted (GuestPoints or reciprocal): confirm before messaging
+- [ ] Cleaning fee stated upfront: clarify in first message
 
 ## Questions to always ask a host before confirming
 
@@ -98,9 +98,9 @@ it, ask for a speed test screenshot. No screenshot = treat as unknown.
 
 > Vetted examples below. Check for equivalents when planning trips to new countries.
 
-**Colombia — IVA (19%):** Tourists with a passport entry stamp are legally exempt.
+**Colombia: IVA (19%):** Tourists with a passport entry stamp are legally exempt.
 1. Show passport with immigration entry stamp at check-in
 2. Ask explicitly: "I'd like the IVA exemption for tourists"
-3. OTAs (Booking.com, Airbnb) often apply it by default — check invoice
+3. OTAs (Booking.com, Airbnb) often apply it by default: check invoice
 4. Direct bookings easier to remove than OTA bookings
-5. Not all properties know this or will honor it — press once, then drop it
+5. Not all properties know this or will honor it: press once, then drop it

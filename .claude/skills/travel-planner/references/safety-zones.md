@@ -7,27 +7,27 @@
 ## General rule (Latin America, especially Colombia)
 Higher on the hill = higher risk. The hillside gradient is the single most
 reliable proxy for safety when you don't know a specific neighborhood.
-Cable car stations and their immediate surroundings are exceptions — they
+Cable car stations and their immediate surroundings are exceptions: they
 tend to be slightly safer than the surrounding hillside.
 
 ## Medellín
 
-### Green — base here without hesitation
+### Green: base here without hesitation
 - El Poblado (Manila sector preferred over Parque Lleras zone)
 - Laureles
 - Envigado (flat central area, near Parque Envigado)
 - Sabaneta
 
-### Amber — verify specific address before accepting
-- Belén (lower flat part only — Belén La Mota fine, Belén Rincón uphill problematic)
+### Amber: verify specific address before accepting
+- Belén (lower flat part only: Belén La Mota fine, Belén Rincón uphill problematic)
 - Buenos Aires (lower streets fine, hillside above Av. El Poblado avoid)
 - Itagüí (some residential pockets OK, check address specifically)
-- Eastern Envigado hillside (toward Las Palmas / El Peñasco — safe but transport friction)
+- Eastern Envigado hillside (toward Las Palmas / El Peñasco: safe but transport friction)
 
-### Red — do not stay, visit only on guided day tours if at all
+### Red: do not stay, visit only on guided day tours if at all
 - Doce de Octubre
 - Upper Robledo
-- San Javier (Metrocable passes through — ride is fine in daylight, don't stay)
+- San Javier (Metrocable passes through: ride is fine in daylight, don't stay)
 - El Centro / Downtown (day visits OK with guide, never stay)
 - Barrio Trinidad, Aranjuez, Prado, Santo Domingo (north of center)
 
@@ -39,12 +39,12 @@ UberYa (scheduled) for airport runs and early day trip departures.
 
 ## Cartagena
 
-### Green — base here
+### Green: base here
 - Getsemaní (improved significantly, authentic neighborhood feel)
 - El Centro / Old Town (expensive but safe, tourist police presence)
 - Bocagrande (beach zone, safe, more generic)
 
-### Red — avoid entirely
+### Red: avoid entirely
 - Torices
 - Canapote
 - Bazurto market area surroundings at night

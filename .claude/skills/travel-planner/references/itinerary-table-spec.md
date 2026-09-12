@@ -13,11 +13,11 @@ Derived from a working Colombia itinerary. Apply this design system exactly.
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>[Country] Itinerary v[N] — [Date range]</title>
-<style>/* all CSS inline — no external sheets */</style>
+<title>[Country] Itinerary v[N]: [Date range]</title>
+<style>/* all CSS inline: no external sheets */</style>
 </head>
 <body>
-<h1>[Country] — [Traveler names]</h1>
+<h1>[Country]: [Traveler names]</h1>
 <div class="meta">[Date range] · [N] nights · [N] bases · [transport note] · [exit flight if booked]</div>
 <div class="wrap">
 <table>
@@ -46,7 +46,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 h1 { font-size: 17px; font-weight: 600; color: #1a1a1a; margin-bottom: 3px; }
 .meta { font-size: 12px; color: #777; margin-bottom: 20px; }
 
-/* Table wrapper — enables horizontal scroll on mobile */
+/* Table wrapper: enables horizontal scroll on mobile */
 .wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 
@@ -62,11 +62,11 @@ tr:last-child td { border-bottom: none; }
 
 /* Transport/status badges */
 .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 600; white-space: nowrap; margin-bottom: 3px; }
-.bf  { background: #dbeafe; color: #1d4ed8; }                                /* FLIGHT — blue */
-.bb  { background: #f1f0eb; color: #555; border: .5px solid #d0cec6; }       /* BUS/OVERLAND — neutral grey */
-.bj  { background: #fef9c3; color: #713f12; border: .5px solid #fde68a; }    /* JEEP/WILLY/COLECTIVO — amber */
-.bt  { background: #f3e8ff; color: #6b21a8; border: .5px solid #e9d5ff; }    /* BOAT/FERRY/WATER — purple */
-.bs  { background: #fef3c7; color: #78350f; border: .5px solid #fcd34d; }    /* SHUTTLE/SHARED VAN — deep amber (Central America, pre-booked tourist vans) */
+.bf  { background: #dbeafe; color: #1d4ed8; }                                /* FLIGHT: blue */
+.bb  { background: #f1f0eb; color: #555; border: .5px solid #d0cec6; }       /* BUS/OVERLAND: neutral grey */
+.bj  { background: #fef9c3; color: #713f12; border: .5px solid #fde68a; }    /* JEEP/WILLY/COLECTIVO: amber */
+.bt  { background: #f3e8ff; color: #6b21a8; border: .5px solid #e9d5ff; }    /* BOAT/FERRY/WATER: purple */
+.bs  { background: #fef3c7; color: #78350f; border: .5px solid #fcd34d; }    /* SHUTTLE/SHARED VAN: deep amber (Central America, pre-booked tourist vans) */
 
 /* Inline status tags (appended after badge text) */
 .upd  { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: #fef3c7; color: #92400e; font-weight: 600; margin-left: 5px; }  /* "UPDATED" */
@@ -74,9 +74,9 @@ tr:last-child td { border-bottom: none; }
 
 /* Night counter circle */
 .nc { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; }
-/* Use inline style for background/color — one per region, e.g.: style="background:#D3D1C7;color:#2C2C2A;" */
+/* Use inline style for background/color: one per region, e.g.: style="background:#D3D1C7;color:#2C2C2A;" */
 
-/* Activity list (no default bullets — uses ::before dot) */
+/* Activity list (no default bullets: uses ::before dot) */
 ul.al { margin: 0; padding: 0; list-style: none; }
 ul.al li { padding-left: 10px; position: relative; margin-bottom: 2px; font-size: 12px; color: #1a1a1a; }
 ul.al li::before { content: "·"; position: absolute; left: 0; color: #aaa; }
@@ -87,7 +87,7 @@ ul.al li::before { content: "·"; position: absolute; left: 0; color: #aaa; }
 /* Notes (logistics tips, context) */
 .note { font-size: 10.5px; color: #888; margin-top: 5px; padding-top: 4px; border-top: .5px solid #e8e6e0; }
 
-/* Warnings (amber) — gotchas, tight connections, cash-only, booking deadlines */
+/* Warnings (amber): gotchas, tight connections, cash-only, booking deadlines */
 .warn { font-size: 10.5px; color: #92400e; margin-top: 5px; padding: 4px 6px; border-radius: 3px; background: #fffbeb; border: .5px solid #fde68a; }
 
 /* WiFi status colors */
@@ -120,13 +120,13 @@ ul.al li::before { content: "·"; position: absolute; left: 0; color: #aaa; }
 
 ## Section divider rows
 
-Section divider text format: `ALL CAPS REGION — Title Case city or sub-region descriptor`
+Section divider text format: `ALL CAPS REGION: Title Case city or sub-region descriptor`
 
-Examples: `ANDEAN HIGHLANDS — Bogotá`, `COFFEE REGION — Salento & Pereira`, `CARIBBEAN COAST — Santa Marta & Tayrona`
+Examples: `ANDEAN HIGHLANDS: Bogotá`, `COFFEE REGION: Salento & Pereira`, `CARIBBEAN COAST: Santa Marta & Tayrona`
 
 ```html
 <tr class="sec">
-  <td colspan="7" style="border-left:3px solid [REGION_COLOR];">[REGION NAME — City or sub-region]</td>
+  <td colspan="7" style="border-left:3px solid [REGION_COLOR];">[REGION NAME: City or sub-region]</td>
 </tr>
 ```
 
@@ -139,7 +139,7 @@ Base rows in that region also carry the border:
 ```
 
 Pick one distinct color per region. Use muted, not garish. Label by travel
-context, not geography — these apply to any continent:
+context, not geography: these apply to any continent:
 - Mountains / highlands: `#888780` (warm grey)
 - Rural / countryside: `#EF9F27` (amber)
 - Urban / city: `#7F77DD` (muted purple)
@@ -160,7 +160,7 @@ Night circle colors should roughly match:
 
 ```html
 <td>
-  <span class="badge bf">FLIGHT — BOG→MDE, 1h</span>
+  <span class="badge bf">FLIGHT: BOG→MDE, 1h</span>
   <div style="margin-top:6px;font-size:12px;"><strong>Airport → hotel (~40min):</strong> Uber or DiDi, ~$8–12 USD.</div>
   <ul class="al" style="margin-top:4px;">
     <li><strong>Best:</strong> Pre-booked transfer ...</li>
@@ -172,24 +172,24 @@ Night circle colors should roughly match:
 </td>
 ```
 
-Badge text convention: `MODE — ORIGIN→DEST, duration` or `MODE — description`
+Badge text convention: `MODE: ORIGIN→DEST, duration` or `MODE: description`
 
 ---
 
 ## Exit row (final flight)
 
 ```html
-<tr class="sec"><td colspan="7" style="border-left:3px solid #378ADD;">Exit — [Country] to [Destination]</td></tr>
+<tr class="sec"><td colspan="7" style="border-left:3px solid #378ADD;">Exit: [Country] to [Destination]</td></tr>
 <tr>
   <td colspan="2" style="border-left:3px solid #378ADD;">
-    <div style="font-weight:600;">Apr 11 — exit flight <span class="conf">BOOKED</span></div>
+    <div style="font-weight:600;">Apr 11: exit flight <span class="conf">BOOKED</span></div>
     <div class="sub">Booking [CODE] · [Traveler names]</div>
   </td>
   <td style="text-align:center;">&mdash;</td>
   <td colspan="4">
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:2px 0;">
-      <span class="badge bf">FL001 — AAA→BBB 10:00, 1h30m</span>
-      <span class="badge bf">FL002 — BBB→CCC 13:00, 2h</span>
+      <span class="badge bf">FL001: AAA→BBB 10:00, 1h30m</span>
+      <span class="badge bf">FL002: BBB→CCC 13:00, 2h</span>
     </div>
     <div style="font-size:11px;color:#555;margin-top:6px;">
       <strong>AAA airport by 08:30.</strong> Taxi/Uber ~15min. Check in online 48h before.

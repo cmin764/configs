@@ -9,7 +9,7 @@ static `.html` file that prints cleanly from any browser.
 
 Generate a standalone `.html` file (not a React app) with:
 - All sections and items pre-expanded, rendered as plain HTML
-- Inline styles throughout — no external CSS dependencies beyond Google Fonts
+- Inline styles throughout: no external CSS dependencies beyond Google Fonts
 - `@media print` rules that hide interactive controls and force color printing
 
 The user opens it in Chrome or Safari, presses Cmd+P (Ctrl+P on Windows),

@@ -46,7 +46,7 @@ rtk proxy <cmd>       # Run without filtering but still track usage
 
 ## Explicit RTK Commands Worth Reaching For
 
-These are not auto-intercepted — use them deliberately when the situation fits:
+These are not auto-intercepted: use them deliberately when the situation fits:
 
 **Build and typecheck output (replaces `| tail -N` workarounds):**
 ```bash
@@ -68,9 +68,9 @@ rtk summary <cmd>           # 2-line heuristic summary of any command's output
 rtk err <cmd>               # errors/warnings only from any command
 ```
 
-## Commands RTK Does NOT Handle — Minimize Output Manually
+## Commands RTK Does NOT Handle: Minimize Output Manually
 
-**`gh pr diff` (1.5% compression — diffs are incompressible):** prefer:
+**`gh pr diff` (1.5% compression: diffs are incompressible):** prefer:
 ```bash
 gh pr diff --stat                  # which files changed, ~10x smaller
 gh pr view --json files            # structured file list
@@ -116,12 +116,12 @@ curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/instal
 It downloads the release tarball for your platform, verifies it against `checksums.txt`
 (SHA-256), and swaps the binary at `~/.local/bin/rtk`.
 
-## Fixed Bug — `git log` After a Merge (resolved in v0.42.0)
+## Fixed Bug: `git log` After a Merge (resolved in v0.42.0)
 
-Previously (through v0.37.2): `rtk git log` / `rtk git log --graph` — even `rtk git log HEAD -N` —
+Previously (through v0.37.2): `rtk git log` / `rtk git log --graph`: even `rtk git log HEAD -N`:
 could drop the merge commit entirely right after a merge and show a non-ancestor commit as if it
 were HEAD. Fixed upstream in v0.42.0 ("honor explicit -n N limit for git log on merge commits") and
-verified against v0.44.1 with a synthetic merge repo — `rtk git log --graph` output now matches
+verified against v0.44.1 with a synthetic merge repo: `rtk git log --graph` output now matches
 native `git log --graph` exactly. No workaround needed on v0.42.0+; if you ever see suspicious
 `rtk git log` output again, sanity-check with `/usr/bin/git log --oneline --graph -10` and confirm
 you're actually running a patched version (`rtk --version`).

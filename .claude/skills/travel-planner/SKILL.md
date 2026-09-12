@@ -4,8 +4,8 @@ description: >
   Generate two paired HTML travel artifacts from raw trip data: (1) a dense,
   printable itinerary table and (2) an interactive Leaflet route map. Use this
   skill whenever the user wants to plan, document, or visualize a multi-stop
-  trip — especially when they describe a route with dates, stays, flights, or
-  transport legs. Triggers on phrases like "create my itinerary", "build a route
+  trip (especially when they describe a route with dates, stays, flights, or
+  transport legs). Triggers on phrases like "create my itinerary", "build a route
   map", "plan my trip", "update the travel table", "add a new stop", "I'm flying
   to X then Y", or any trip planning conversation involving 3+ locations. Also
   triggers when the user uploads booking confirmations, flight tickets, or
@@ -20,7 +20,7 @@ Two outputs, always paired: an **itinerary table** (HTML) and a **route map**
 
 ---
 
-## Traveler Profile (default persona — override with user input)
+## Traveler Profile (default persona: override with user input)
 
 **Rhythm**
 - Remote workers: 3-5h morning work block, non-negotiable. WiFi is a hard
@@ -33,7 +33,7 @@ Two outputs, always paired: an **itinerary table** (HTML) and a **route map**
 - No rental cars. Public transport, shuttles, local jeeps, water taxis, buses.
 - Prefers Uber/DiDi/InDrive over street taxis in cities.
 - Pre-booked transfers for airport runs and early morning departures.
-- Checks into a base and radiates outward for day trips — doesn't move hotels
+- Checks into a base and radiates outward for day trips: doesn't move hotels
   to chase individual sights.
 
 **Accommodation**
@@ -69,7 +69,7 @@ Two outputs, always paired: an **itinerary table** (HTML) and a **route map**
 ## Artifact 1: Itinerary Table
 
 ### File naming
-`[country]_itinerary_v[N].html` — increment version, delete old ones.
+`[country]_itinerary_v[N].html`: increment version, delete old ones.
 
 ### Structure
 One HTML file. No external dependencies. Inline CSS only.
@@ -89,7 +89,7 @@ design tokens, component classes, and markup patterns.
   pending bookings, urgent action items.
 
 ### Content density rules
-- Activities column: bullet list, 12px. Concrete and specific — not "explore
+- Activities column: bullet list, 12px. Concrete and specific: not "explore
   the city" but "Parque Botero + Museo de Antioquia, then cable car to
   Santo Domingo."
 - Day trips column: include cost, duration, booking requirement, and whether
@@ -98,10 +98,10 @@ design tokens, component classes, and markup patterns.
   top. (2) A `font-size:12px` sub-block for "Airport/station → accommodation"
   with app recommendation, approximate cost, and duration. Use `ul.al` with
   Best / Budget / Avoid for airports with multiple realistic options. Include
-  operator name and known friction (e.g., "Uber blocked here — pre-arranged
+  operator name and known friction (e.g., "Uber blocked here: pre-arranged
   transfer only").
 - Activities cell: end every cell with a `.note` showing the workday structure
-  for that base — morning work block hours, then what type of afternoon the
+  for that base: morning work block hours, then what type of afternoon the
   location best supports (nature, culture, food, rest). One sentence.
 - WiFi column: Excellent / Good / Variable / Poor / None. Excellent is green,
   Good/Variable are blue, Poor/None are red. Add a `.sub` caveat if context
@@ -129,22 +129,22 @@ Pure vanilla JS. No frameworks.
 Read `references/route-map-spec.md` for the full Leaflet implementation spec,
 marker patterns, arc drawing functions, signal zones, and popup templates.
 
-**Base markers** — numbered circles (34px), colored by region:
+**Base markers**: numbered circles (34px), colored by region:
 - Each base gets a number matching the itinerary sequence.
 - Popup on click: base name, dates, nights, WiFi, 2-3 key logistics notes.
 - Use contrasting colors per region.
 
-**Arcs between bases** — colored by transport mode (see transport-modes.md):
+**Arcs between bases**: colored by transport mode (see transport-modes.md):
 - Arcs with arrowheads showing travel direction.
 - Label each arc with mode + distance + duration.
 
-**Day trip markers** — small purple pill labels, offset from base.
+**Day trip markers**: small purple pill labels, offset from base.
 
-**Signal zones** — circles for offline or variable WiFi areas.
+**Signal zones**: circles for offline or variable WiFi areas.
 
-**Legend** — bottom bar showing transport color codes.
+**Legend**: bottom bar showing transport color codes.
 
-**Map init** — fitBounds to all markers. No hardcoded center.
+**Map init**: fitBounds to all markers. No hardcoded center.
 
 ---
 
@@ -153,11 +153,11 @@ marker patterns, arc drawing functions, signal zones, and popup templates.
 1. Establish booking sequencing order before planning logistics: most
    constrained accommodation first (island lodges, popular park-adjacent stays,
    Carnival-season cities), day tours second, transport legs last. Flag any
-   confirmed items out of this order as a warn badge — flights booked before
+   confirmed items out of this order as a warn badge: flights booked before
    accommodation exists is a common trip-breaking mistake.
 2. Parse all input (dates, locations, flights, accommodation, activities).
-2. Geocode each location — look up approximate lat/lng coordinates.
-3. Build itinerary table first — it forces you to clarify every leg before
+2. Geocode each location: look up approximate lat/lng coordinates.
+3. Build itinerary table first: it forces you to clarify every leg before
    drawing lines on a map.
 4. Build route map second, using the same data.
 5. Output both files to the current working directory (or user-specified path).
@@ -169,12 +169,12 @@ marker patterns, arc drawing functions, signal zones, and popup templates.
 
 - Free-text trip description ("I'm flying from X to Y on date Z, staying 5
   nights, then taking a bus to W...")
-- Uploaded flight e-tickets (PDF) — extract: flight number, dep/arr times,
+- Uploaded flight e-tickets (PDF): extract: flight number, dep/arr times,
   fare class, baggage allowance, booking code, seats.
-- Uploaded accommodation guides / welcome books (PDF) — extract: WiFi creds,
+- Uploaded accommodation guides / welcome books (PDF): extract: WiFi creds,
   checkout rules, transport recommendations, host contact.
 - HomeExchange / Airbnb listing exports.
-- Prior itinerary HTML — update in place, increment version.
+- Prior itinerary HTML: update in place, increment version.
 
 When parsing flight tickets, always check:
 - Fare class (BASIC = no overhead carry-on)
@@ -199,7 +199,7 @@ Surface these in the itinerary footer or as warn badges without being asked:
 - Transit-constrained locations (island ferries or park boats running once per
   day): flag that all transport legs should be afternoon-slotted to protect the
   morning work block. Note the specific cutoff time if known (e.g., "3PM ferry
-  — last slot, book immediately").
+: last slot, book immediately").
 
 ---
 
@@ -207,16 +207,16 @@ Surface these in the itinerary footer or as warn badges without being asked:
 
 Read these when needed:
 
-- `references/itinerary-table-spec.md` — full HTML/CSS spec, design tokens,
+- `references/itinerary-table-spec.md`: full HTML/CSS spec, design tokens,
   component classes, and markup patterns for the itinerary table
-- `references/route-map-spec.md` — Leaflet implementation spec, marker and arc
+- `references/route-map-spec.md`: Leaflet implementation spec, marker and arc
   patterns, signal zones, popup templates, legend structure
-- `references/transport-modes.md` — arc colors, label formats, cost ranges
+- `references/transport-modes.md`: arc colors, label formats, cost ranges
   by country/region
-- `references/safety-zones.md` — neighborhood safety reference for cities
+- `references/safety-zones.md`: neighborhood safety reference for cities
   covered so far (Medellín, Cartagena, Bogotá, Quito)
-- `references/atm-fees.md` — ATM fee data by bank for Colombia and Ecuador
-- `references/accommodation-filters.md` — full preference checklist for
+- `references/atm-fees.md`: ATM fee data by bank for Colombia and Ecuador
+- `references/accommodation-filters.md`: full preference checklist for
   evaluating any accommodation listing
 
 ---
