@@ -204,6 +204,24 @@ def check_single_arch_brew(files, findings):
                              f"(Apple Silicon) with no Intel (/usr/local) fallback")
 
 
+def check_em_dashes(files, findings):
+    """Em dash (U+2014) is banned in every written output per the user's
+    global CLAUDE.md, commits and PRs included. Matched via the escape so
+    this file itself never needs a self-exemption. En dashes and arrows are
+    left alone -- the rule is em dash only."""
+    em_dash = "—"
+    for path in files:
+        if path == SELF:
+            continue
+        text = read_text(path)
+        if text is None:
+            continue
+        for i, line in enumerate(text.split("\n"), start=1):
+            if em_dash in line:
+                findings.append(f"{path.relative_to(REPO_ROOT)}:{i}: em dash (U+2014), "
+                                 f"use a comma, colon, period, or parentheses instead")
+
+
 def check_junk(files, findings):
     # Name-pattern matching only: a mechanical rule, not a judgment call.
     # Whether a large file is genuinely hand-edited vs. accumulated noise is
@@ -229,6 +247,24 @@ def _selftest():
     # still be recognized as trailing (not just comma-then-whitespace)
     commented_trailing = '{"a": 1, // trailing\n}'
     assert json.loads(strip_jsonc(commented_trailing)) == {"a": 1}, strip_jsonc(commented_trailing)
+
+    # check_em_dashes: an em dash must be flagged; a hyphen or en dash must not.
+    import tempfile
+    global REPO_ROOT
+    original_root = REPO_ROOT
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        bad = tmp_path / "bad.md"
+        bad.write_text("a line with an em dash — right there\n")
+        good = tmp_path / "good.md"
+        good.write_text("a line with a hyphen - and an en dash – only\n")
+        REPO_ROOT = tmp_path
+        try:
+            findings = []
+            check_em_dashes([bad, good], findings)
+        finally:
+            REPO_ROOT = original_root
+        assert len(findings) == 1 and "bad.md" in findings[0], findings
     print("selftest ok")
 
 
@@ -245,6 +281,7 @@ def main():
     check_machine_paths(files, findings)
     check_single_arch_brew(files, findings)
     check_junk(files, findings)
+    check_em_dashes(files, findings)
 
     if findings:
         print(f"{len(findings)} finding(s):\n")
