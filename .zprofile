@@ -22,6 +22,9 @@ unset _java_prefix
 # Go
 export PATH="$PATH:$HOME/go/bin"
 
+# Docker Desktop CLI plugins
+export PATH="$PATH:$HOME/.docker/bin"
+
 # pyenv
 export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
