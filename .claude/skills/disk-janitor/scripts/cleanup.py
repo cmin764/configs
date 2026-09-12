@@ -1051,8 +1051,10 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
             freed = _apply_electron_caches(path, dry_run=False)
         report.append({"target": "claude-desktop", "level": 2, "reclaimable": size, "freed": freed,
                         "risk": "low",
-                        "note": "cache subdirs only; chat history/settings and vm_bundles "
-                                "(sandbox images, often the biggest item here) untouched"})
+                        "note": "cache subdirs only; chat history/settings untouched, as is "
+                                "vm_bundles (Cowork sandbox VM disk image, not cache -- "
+                                "usually the biggest item here, deleting it forces a rebuild "
+                                "from its bundled .zst next time Cowork runs)"})
 
     if active("discord", 2):
         path = HOME / "Library" / "Application Support" / "discord"
