@@ -29,6 +29,18 @@ measurement strategy, apply action, risk, and notes.
 | claude-cache | `~/.claude/shell-snapshots`, `~/.claude/paste-cache`, `~/.claude/cache` | `du -sh` each | delete dirs | Low |
 | claude-chats | `~/.claude/projects/*/<session>.jsonl` + matching session subdir | sum session files with mtime < --chats-older-than | delete session files and their subdirs | Low-med — loses --resume for old sessions; memory never touched |
 | docker | daemon socket | dangling images + stopped containers + build cache (tagged images excluded) | `docker system prune -f` (no -a, no --volumes) | Med — removes dangling images, stopped containers, build cache; tagged images untouched |
+| teams | `~/Library/Containers/com.microsoft.teams2`, `~/Library/Group Containers/UBF8T346G9.com.microsoft.teams` | sum of matched cache subdirs (`_find_electron_cache_dirs`) | delete matched subdirs only | Low — literal cache dirnames only (`Cache`, `Code Cache`, `GPUCache`, …); login/session state lives elsewhere in the container and is untouched |
+| claude-desktop | `~/Library/Application Support/Claude` | sum of matched cache subdirs | delete matched subdirs only | Low — same cache-dirname allowlist; chat history/settings and `vm_bundles` (sandbox images, usually the largest item in this tree) are untouched |
+| discord | `~/Library/Application Support/discord` | sum of matched cache subdirs | delete matched subdirs only | Low — same pattern; login preserved |
+| claude-memory | `<profile>/projects/*/memory/` for every profile | `du -sh` each memory dir + newest mtime | **report-only, never deletes** | Info — decoding a project's live path from its encoded dirname is ambiguous (verified: every encoded dir on this machine still had a live project), and memory content doesn't go stale by age; surfaced for manual review only |
+
+### `chrome` at level 2 also covers Application Support
+
+Beyond `~/Library/Caches/Google/Chrome` (whole-dir delete), `chrome` also runs
+`_find_electron_cache_dirs` under `~/Library/Application Support/Google/Chrome`
+to catch per-profile `Service Worker/CacheStorage`, `Code Cache`, `GPUCache`,
+and `component_crx_cache` — cache mixed into the same tree as bookmarks,
+extensions, and cookies, which are never touched.
 
 ### Claude chat pruning detail
 
@@ -51,6 +63,9 @@ themselves, the `memory/` dirs, and tool configs are never touched.
 | plugin-node-modules | `<profile>/plugins/cache/**/node_modules` (depth ≤ 4) for every discovered profile | `du -sh` per dir | confirm prompt, then delete dir | Med — rebuilt automatically on next plugin run |
 | plugin-marketplace-git | `<profile>/plugins/marketplaces/*/.git` for every discovered profile | `du -sh` per dir | confirm prompt, then delete dir | Med — re-cloned on next `claude plugin marketplace update` |
 | plugin-marketplace-binaries | files under `<profile>/plugins/marketplaces/**` matching `.pdf/.zip/.dmg/.mp4/.mov`, ≥1MB | file size | confirm prompt, then delete file | Med — upstream repo content, not needed to run the plugin; **not durable**, see note below |
+| plugin-old-versions | `<profile>/plugins/cache/<vendor>/<plugin>/<version>/` where more than one version dir exists | `du -sh` per superseded version dir | confirm prompt, then delete dir | Low — only the highest version is ever used by the plugin runtime; verified against a real duplicate (`thedotmack/claude-mem` 13.16.1 alongside 13.17.1, 482M) |
+| venv | top-level `<work-dir>/**/.venv` or `venv` (must contain `pyvenv.cfg`, depth ≤ 4, never nested) | `du -sh` per dir; filter by project last-touched mtime | delete the venv dir only (never the project root) | Med — same staleness contract as `node_modules`; `uv sync`/`pip install` needed before next run |
+| uv-python-orphans | `uv python dir`-reported interpreter dirs not referenced by any `.venv/pyvenv.cfg` or `uv tool dir` venv | `du -sh` per install dir | `uv python uninstall <version>` (delegated CLI, not a raw delete) | Low — a version is only flagged if `uv python dir`/`uv python list --only-installed` both succeed and no venv anywhere under the work dirs (or `uv tool dir`) points at it |
 
 ### Plugin-cache targets: verified, not just assumed
 
@@ -142,4 +157,35 @@ allowlist raises an error and skips the target:
 ~/Library/Developer/CoreSimulator/Devices
 <profile>/plugins/cache/     (for ~/.claude and every ~/.claude-* profile)
 <profile>/plugins/marketplaces/
+~/Library/Containers/com.microsoft.teams2
+~/Library/Group Containers/UBF8T346G9.com.microsoft.teams
+~/Library/Application Support/Claude
+~/Library/Application Support/discord
+~/Library/Application Support/Google/Chrome
 ```
+
+---
+
+## Docker.raw: apparent vs. actual size is not a separate reclaim path
+
+`docker system df` and Finder can both show Docker Desktop's sparse
+`Docker.raw` VM disk at a large "apparent" size (its provisioned cap) while
+`du -h` reports a much smaller "actual" blocks-in-use figure — e.g. 128G
+apparent vs. 17G actual is normal on a moderately active Docker install. The
+gap is sparse-file accounting, not extra junk sitting on disk; it's already
+fully addressed by the `docker`/`docker-volumes` targets above (image/build
+cache pruning), not something to hunt for separately.
+
+## Flagged but not built: `.codex`, `.local`, `.nvm`, wallpaper cache
+
+A home-directory sweep found `~/.codex` (~1.2G), `~/.local` (~1.1G), and
+`~/.nvm` (~222M) as non-trivial, unaudited dirs, and macOS's own
+`com.apple.wallpaper*` dynamic-wallpaper asset cache (~2G across
+`~/Library/Application Support/com.apple.wallpaper` and
+`~/Library/Containers/com.apple.wallpaper.agent`). None of these got a
+target: the first three have unverified internal structure (cache vs.
+config/auth — the same diligence bar the plugin-cache targets went through
+before their delete logic was written), and the wallpaper cache is an
+Apple-managed system container with a live agent process, a different risk
+class than a browser or Electron app cache. Revisit if one of these grows
+large enough to be worth the verification work.

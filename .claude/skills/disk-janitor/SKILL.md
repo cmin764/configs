@@ -42,8 +42,8 @@ dry-run gives the fullest picture without touching anything.
 | Level | What it covers | Risk |
 |-------|---------------|------|
 | 1 (default) | Package-manager caches via official CLIs: brew, uv, pip, npm, bun | Low |
-| 2 | + Chrome/JetBrains/IDE caches, ~/Library/Logs, Claude shell/paste cache, Claude chats older than N days, docker prune -f (dangling images + build cache only, tagged images untouched) | Low-med |
-| 3 | + Stale node_modules (projects untouched > N days), Xcode artifacts, brew --prune=all, docker prune -a (ALL unused images, confirm required), Claude plugin caches: cached node_modules, marketplace `.git` dirs, large tracked binaries (PDFs/zips/media) in marketplace working trees | Med (rebuild cost) |
+| 2 | + Chrome/JetBrains/IDE caches (incl. Chrome's Application Support cache subdirs), ~/Library/Logs, Claude shell/paste cache, Claude chats older than N days, docker prune -f (dangling images + build cache only, tagged images untouched), Teams/Claude-desktop/Discord cache subdirs (login preserved), Claude memory audit (report-only) | Low-med |
+| 3 | + Stale node_modules and venvs (projects untouched > N days), Xcode artifacts, brew --prune=all, docker prune -a (ALL unused images, confirm required), Claude plugin caches: cached node_modules, marketplace `.git` dirs, large tracked binaries (PDFs/zips/media) in marketplace working trees, superseded plugin version dirs, orphaned uv-managed Python installs | Med (rebuild cost) |
 | dangerous | docker system prune -a --volumes — double-gated: needs --include-dangerous + explicit confirm | High |
 
 Levels are cumulative. `--apply` alone runs level 1 only; you must pass
@@ -99,6 +99,15 @@ python3 scripts/cleanup.py --level 3 --work-dir ~/code --apply
 - Unknown `--only`/`--skip` names fail fast with the list of valid targets.
 - Claude Code profiles (`~/.claude` plus any `~/.claude-*` `CLAUDE_CONFIG_DIR`
   profile) are auto-discovered by globbing — no profile list to keep in sync.
+- Teams/Claude-desktop/Discord/Chrome-App-Support targets only ever delete
+  literal cache-named subdirs (`Cache`, `Code Cache`, `GPUCache`, …), never
+  the whole app support/container tree — login, chat history, and profile
+  data are untouched.
+- Claude memory (`<profile>/projects/*/memory/`) is only ever reported, never
+  deleted, at any level — see `claude-memory` in the target catalog for why.
+- uv Python interpreter removal goes through `uv python uninstall`, never a
+  raw directory delete, and only fires for a version no venv or `uv tool`
+  install references anywhere under the work dirs.
 
 ---
 

@@ -38,6 +38,17 @@ KNOWN_TARGETS = {
     "chrome", "jetbrains", "logs", "claude-cache", "claude-chats", "docker",
     "node_modules", "xcode", "docker-volumes",
     "plugin-node-modules", "plugin-marketplace-git", "plugin-marketplace-binaries",
+    "plugin-old-versions", "teams", "claude-desktop", "discord", "claude-memory",
+    "venv", "uv-python-orphans",
+}
+
+# Directory names that are unambiguously Electron/Chromium cache, never
+# profile data (bookmarks, cookies, extensions, login state live elsewhere
+# in the same tree). Shared by every "app support cache, not whole app"
+# target (teams, claude-desktop, discord, chrome's Application Support half).
+_ELECTRON_CACHE_DIRNAMES = {
+    "Cache", "Code Cache", "GPUCache", "blob_storage", "CacheStorage",
+    "component_crx_cache", "DawnGraphiteCache", "DawnWebGPUCache",
 }
 
 # Common project directory names to probe when --work-dir is not specified.
@@ -83,6 +94,11 @@ _ALLOWLIST_BASE = [
     HOME / "Library" / "Developer" / "Xcode" / "DerivedData",
     HOME / "Library" / "Developer" / "Xcode" / "Archives",
     HOME / "Library" / "Developer" / "CoreSimulator" / "Devices",
+    HOME / "Library" / "Containers" / "com.microsoft.teams2",
+    HOME / "Library" / "Group Containers" / "UBF8T346G9.com.microsoft.teams",
+    HOME / "Library" / "Application Support" / "Claude",
+    HOME / "Library" / "Application Support" / "discord",
+    HOME / "Library" / "Application Support" / "Google" / "Chrome",
 ]
 
 ALLOWLIST: list[Path] = []
@@ -161,6 +177,29 @@ def _delete_dir(path: Path, dry_run: bool) -> int:
     if not dry_run:
         shutil.rmtree(path, ignore_errors=True)
     return size
+
+
+def _find_electron_cache_dirs(root: Path) -> list[Path]:
+    """Find literal cache-named subdirs under an Electron/Chromium app tree.
+
+    Never returns the root itself or profile-data siblings (bookmarks,
+    cookies, login state) -- only dirs whose name is unambiguously cache
+    (see _ELECTRON_CACHE_DIRNAMES). Matched dirs aren't descended into: the
+    whole matched dir is one deletion unit, so nothing nested under it needs
+    a separate entry.
+    """
+    if not root.exists():
+        return []
+    results = []
+    for r, dirs, _files in os.walk(root):
+        matched = [d for d in dirs if d in _ELECTRON_CACHE_DIRNAMES]
+        results.extend(Path(r) / d for d in matched)
+        dirs[:] = [d for d in dirs if d not in _ELECTRON_CACHE_DIRNAMES]
+    return results
+
+
+def _apply_electron_caches(root: Path, dry_run: bool) -> int:
+    return sum(_delete_dir(d, dry_run) for d in _find_electron_cache_dirs(root))
 
 
 def _delete_old_files(path: Path, days: int, dry_run: bool) -> int:
@@ -347,6 +386,198 @@ def _find_stale_node_modules(stale_days: int, work_dirs: list[Path]) -> list[tup
     return results
 
 
+def _find_stale_venvs(stale_days: int, work_dirs: list[Path]) -> list[tuple[Path, int]]:
+    """Find .venv/venv dirs of projects untouched within the stale window.
+
+    Mirrors _find_stale_node_modules exactly (same depth cap, same
+    "project touched recently" guard); the only difference is the dirname
+    match, gated on a pyvenv.cfg marker so an unrelated directory literally
+    named "venv" is never mistaken for a virtualenv.
+    """
+    cutoff = time.time() - stale_days * 86400
+    results = []
+    seen: set[Path] = set()
+    for work in work_dirs:
+        if not work.exists():
+            continue
+        base_depth = len(work.resolve().parts)
+        for root, dirs, _files in os.walk(work):
+            root_path = Path(root)
+            depth = len(root_path.resolve().parts) - base_depth
+            if depth >= _NM_MAX_DEPTH:
+                dirs.clear()
+                continue
+            venv_names = [
+                d for d in dirs
+                if d in (".venv", "venv") and (root_path / d / "pyvenv.cfg").is_file()
+            ]
+            for name in venv_names:
+                dirs.remove(name)
+                venv = root_path / name
+                if venv.resolve() in seen:
+                    continue
+                seen.add(venv.resolve())
+                if not _in_allowlist(venv):
+                    continue
+                if venv.stat().st_mtime > cutoff:
+                    continue
+                try:
+                    project_mtime = max(
+                        p.stat().st_mtime for p in root_path.iterdir()
+                        if p.name != name
+                    )
+                except (StopIteration, ValueError, OSError):
+                    project_mtime = venv.stat().st_mtime
+                if project_mtime > cutoff:
+                    continue
+                results.append((venv, _du(venv)))
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+    return results
+
+
+def _apply_venvs(stale_days: int, work_dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
+    targets = _find_stale_venvs(stale_days, work_dirs)
+    results = []
+    for venv, size in targets:
+        freed = 0
+        if not dry_run:
+            if not yes and not _confirm(f"  Delete {venv} ({_fmt(size)})?"):
+                continue
+            shutil.rmtree(venv, ignore_errors=True)
+            freed = size
+        results.append({"path": str(venv), "size": size, "freed": freed})
+    return results
+
+
+def _find_all_venv_cfgs(work_dirs: list[Path]) -> list[Path]:
+    """Every .venv/venv pyvenv.cfg under the work dirs, staleness aside --
+    used to build the "still referenced" set for uv-python-orphans, where
+    an actively-used venv must count even if it isn't stale.
+    """
+    results = []
+    for work in work_dirs:
+        if not work.exists():
+            continue
+        base_depth = len(work.resolve().parts)
+        for root, dirs, _files in os.walk(work):
+            root_path = Path(root)
+            depth = len(root_path.resolve().parts) - base_depth
+            if depth >= _NM_MAX_DEPTH:
+                dirs.clear()
+                continue
+            for name in (".venv", "venv"):
+                cfg = root_path / name / "pyvenv.cfg"
+                if cfg.is_file():
+                    results.append(cfg)
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+    return results
+
+
+def _find_referenced_uv_pythons(work_dirs: list[Path]) -> set[str]:
+    """Every 'home = ...' path from a project venv's or uv tool venv's
+    pyvenv.cfg -- the interpreter directory each still points at."""
+    cfg_paths = _find_all_venv_cfgs(work_dirs)
+    tool_dir_result = _run(["uv", "tool", "dir"]) if _has("uv") else None
+    if tool_dir_result is not None and tool_dir_result.returncode == 0:
+        tool_dir = Path(tool_dir_result.stdout.strip())
+        if tool_dir.is_dir():
+            cfg_paths.extend(p for p in tool_dir.glob("*/pyvenv.cfg") if p.is_file())
+    referenced = set()
+    for cfg in cfg_paths:
+        try:
+            for line in cfg.read_text().splitlines():
+                if line.strip().lower().startswith("home"):
+                    referenced.add(line.split("=", 1)[1].strip())
+        except OSError:
+            continue
+    return referenced
+
+
+def _find_orphan_uv_pythons(work_dirs: list[Path]) -> list[tuple[str, Path]]:
+    """uv-managed Python installs not referenced by any venv or uv tool.
+
+    Deliberately conservative: only flags a version if `uv python dir` and
+    `uv python list --only-installed` both succeed and the install dir
+    actually exists on disk -- anything ambiguous is left alone.
+    """
+    if not _has("uv"):
+        return []
+    dir_result = _run(["uv", "python", "dir"])
+    if dir_result.returncode != 0:
+        return []
+    python_dir = Path(dir_result.stdout.strip())
+    if not python_dir.is_dir():
+        return []
+    list_result = _run(["uv", "python", "list", "--only-installed"])
+    if list_result.returncode != 0:
+        return []
+    referenced = _find_referenced_uv_pythons(work_dirs)
+    orphans = []
+    for line in list_result.stdout.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        key = parts[0]
+        install_dir = python_dir / key
+        if not install_dir.is_dir():
+            continue
+        if any(key in ref for ref in referenced):
+            continue
+        orphans.append((key, install_dir))
+    return orphans
+
+
+def _apply_uv_python_orphans(work_dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
+    """Delegates the actual removal to `uv python uninstall`, not a raw
+    directory delete -- matches the skill's CLI-over-rm-rf pattern for
+    every other package-manager-owned target (brew/pip/npm)."""
+    results = []
+    for key, install_dir in _find_orphan_uv_pythons(work_dirs):
+        size = _du(install_dir)
+        freed = 0
+        if not dry_run:
+            if not yes and not _confirm(f"  uv python uninstall {key} ({_fmt(size)})?"):
+                continue
+            _run(["uv", "python", "uninstall", key])
+            if not install_dir.exists():
+                freed = size
+        results.append({"path": str(install_dir), "size": size, "freed": freed})
+    return results
+
+
+def _audit_claude_memory(profiles: list[Path]) -> list[dict]:
+    """Report-only: per-project memory dir size + newest-file mtime.
+
+    Never deletes. Decoding a project's live path from its encoded dirname
+    is ambiguous (real directory names contain hyphens), so automated
+    "is this project gone" detection produces false positives -- verified
+    on this machine, where every encoded dir still had a live project.
+    Memory content also doesn't go stale by age the way a cache does, so
+    this stays a human decision.
+    """
+    results = []
+    for profile in profiles:
+        projects_dir = profile / "projects"
+        if not projects_dir.exists():
+            continue
+        for project in projects_dir.iterdir():
+            mem = project / "memory"
+            if not mem.is_dir():
+                continue
+            size = _du(mem)
+            if size == 0:
+                continue
+            try:
+                newest = max(
+                    (p.stat().st_mtime for p in mem.rglob("*") if p.is_file()),
+                    default=None,
+                )
+            except OSError:
+                newest = None
+            results.append({"path": str(mem), "size": size, "newest": newest})
+    return results
+
+
 def _apply_node_modules(stale_days: int, work_dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
     targets = _find_stale_node_modules(stale_days, work_dirs)
     results = []
@@ -385,6 +616,45 @@ def _find_plugin_node_modules(profiles: list[Path]) -> list[Path]:
                 dirs.remove("node_modules")
                 results.append(root_path / "node_modules")
             dirs[:] = [d for d in dirs if not d.startswith(".")]
+    return results
+
+
+def _version_key(name: str) -> tuple[int, ...]:
+    """Parse a dot-separated version dirname into a comparable tuple.
+
+    Non-numeric segments (rare, e.g. a "latest" symlink dir) sort as -1 so
+    they never get treated as the newest version.
+    """
+    parts = []
+    for seg in name.split("."):
+        parts.append(int(seg) if seg.isdigit() else -1)
+    return tuple(parts)
+
+
+def _find_plugin_old_versions(profiles: list[Path]) -> list[Path]:
+    """Older version dirs of a plugin that has more than one installed under
+    <profile>/plugins/cache/<vendor>/<plugin>/<version>/.
+
+    Only the highest version is ever used by the plugin runtime, so every
+    other version dir found alongside it is dead weight -- verified against
+    a real duplicate (thedotmack/claude-mem 13.16.1 next to 13.17.1).
+    """
+    results = []
+    for profile in profiles:
+        cache_dir = profile / "plugins" / "cache"
+        if not cache_dir.exists():
+            continue
+        for vendor in cache_dir.iterdir():
+            if not vendor.is_dir():
+                continue
+            for plugin in vendor.iterdir():
+                if not plugin.is_dir():
+                    continue
+                versions = [v for v in plugin.iterdir() if v.is_dir()]
+                if len(versions) < 2:
+                    continue
+                newest = max(versions, key=lambda v: _version_key(v.name))
+                results.extend(v for v in versions if v != newest)
     return results
 
 
@@ -583,6 +853,13 @@ def _selftest() -> None:
         big_pdf = plans / "deck.pdf"
         big_pdf.write_bytes(b"0" * (_MARKETPLACE_BINARY_MIN_SIZE + 1))
 
+        # A second plugin with two version dirs installed side by side --
+        # the older one must be the only thing plugin-old-versions flags.
+        old_version = profile / "plugins" / "cache" / "thedotmack" / "claude-mem" / "13.16.1"
+        new_version = profile / "plugins" / "cache" / "thedotmack" / "claude-mem" / "13.17.1"
+        old_version.mkdir(parents=True)
+        new_version.mkdir(parents=True)
+
         real_home = HOME
         HOME = tmp_path
         try:
@@ -593,8 +870,28 @@ def _selftest() -> None:
                 "marketplace .git not found"
             assert big_pdf in _find_plugin_marketplace_binaries(profiles), \
                 "large marketplace binary not found"
+            old_versions = _find_plugin_old_versions(profiles)
+            assert old_version in old_versions, "older plugin version dir not flagged"
+            assert new_version not in old_versions, "newest plugin version dir wrongly flagged"
         finally:
             HOME = real_home
+
+    # uv-python-orphans: a venv's pyvenv.cfg must mark its interpreter as
+    # referenced; an interpreter no pyvenv.cfg points at must not be.
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        work_dir = tmp_path / "work"
+        venv_dir = work_dir / "proj" / ".venv"
+        venv_dir.mkdir(parents=True)
+        (venv_dir / "pyvenv.cfg").write_text(
+            "home = /fake/uv/python/cpython-3.14.6-macos-aarch64-none/bin\n"
+            "version = 3.14.6\n"
+        )
+        referenced = _find_referenced_uv_pythons([work_dir])
+        assert any("cpython-3.14.6-macos-aarch64-none" in r for r in referenced), \
+            "referenced uv python not extracted from pyvenv.cfg"
+        assert not any("cpython-3.13.15-macos-aarch64-none" in r for r in referenced), \
+            "unreferenced uv python incorrectly counted as referenced"
 
     print("selftest ok")
 
@@ -725,10 +1022,55 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
 
     if active("chrome", 2):
         path = HOME / "Library" / "Caches" / "Google" / "Chrome"
-        size = _du(path)
-        freed = _delete_dir(path, dry_run) if not dry_run else 0
+        app_support = HOME / "Library" / "Application Support" / "Google" / "Chrome"
+        size = _du(path) + _apply_electron_caches(app_support, dry_run=True)
+        freed = 0
+        if not dry_run:
+            freed = _delete_dir(path, dry_run=False) + _apply_electron_caches(app_support, dry_run=False)
         report.append({"target": "chrome", "level": 2, "reclaimable": size, "freed": freed,
-                        "risk": "low", "note": "close Chrome before cleaning"})
+                        "risk": "low",
+                        "note": "close Chrome first; App Support cache subdirs only, profile/bookmarks untouched"})
+
+    if active("teams", 2):
+        teams_roots = [
+            HOME / "Library" / "Containers" / "com.microsoft.teams2",
+            HOME / "Library" / "Group Containers" / "UBF8T346G9.com.microsoft.teams",
+        ]
+        size = sum(_apply_electron_caches(r, dry_run=True) for r in teams_roots)
+        freed = 0
+        if not dry_run and size > 0:
+            freed = sum(_apply_electron_caches(r, dry_run=False) for r in teams_roots)
+        report.append({"target": "teams", "level": 2, "reclaimable": size, "freed": freed,
+                        "risk": "low", "note": "cache subdirs only; login/session preserved"})
+
+    if active("claude-desktop", 2):
+        path = HOME / "Library" / "Application Support" / "Claude"
+        size = _apply_electron_caches(path, dry_run=True)
+        freed = 0
+        if not dry_run and size > 0:
+            freed = _apply_electron_caches(path, dry_run=False)
+        report.append({"target": "claude-desktop", "level": 2, "reclaimable": size, "freed": freed,
+                        "risk": "low",
+                        "note": "cache subdirs only; chat history/settings and vm_bundles "
+                                "(sandbox images, often the biggest item here) untouched"})
+
+    if active("discord", 2):
+        path = HOME / "Library" / "Application Support" / "discord"
+        size = _apply_electron_caches(path, dry_run=True)
+        freed = 0
+        if not dry_run and size > 0:
+            freed = _apply_electron_caches(path, dry_run=False)
+        report.append({"target": "discord", "level": 2, "reclaimable": size, "freed": freed,
+                        "risk": "low", "note": "cache subdirs only; login preserved"})
+
+    if active("claude-memory", 2):
+        mem_results = _audit_claude_memory(profiles)
+        total_size = sum(r["size"] for r in mem_results)
+        report.append({"target": "claude-memory", "level": 2, "reclaimable": 0, "freed": 0,
+                        "risk": "info",
+                        "note": f"{_fmt(total_size)} across {len(mem_results)} project dirs — "
+                                "report-only, review manually (never auto-deleted)",
+                        "details": [r["path"] for r in mem_results]})
 
     if active("jetbrains", 2):
         jb = HOME / "Library" / "Caches" / "JetBrains"
@@ -815,6 +1157,33 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
                         freed += _delete_dir(sim_path, dry_run=False)
         report.append({"target": "xcode", "level": 3, "reclaimable": size, "freed": freed,
                         "risk": "med", "note": "DerivedData + Archives + unavailable simulators"})
+
+    if active("venv", 3):
+        venv_results = _apply_venvs(args.stale_days, work_dirs, dry_run=dry_run, yes=args.yes)
+        size = sum(r["size"] for r in venv_results)
+        freed = sum(r["freed"] for r in venv_results)
+        note = f"{len(venv_results)} dirs untouched >{args.stale_days}d; uv sync/pip install needed"
+        report.append({"target": "venv", "level": 3, "reclaimable": size, "freed": freed,
+                        "risk": "med", "note": note,
+                        "details": [r["path"] for r in venv_results]})
+
+    if active("uv-python-orphans", 3):
+        orphan_results = _apply_uv_python_orphans(work_dirs, dry_run=dry_run, yes=args.yes)
+        size = sum(r["size"] for r in orphan_results)
+        freed = sum(r["freed"] for r in orphan_results)
+        report.append({"target": "uv-python-orphans", "level": 3, "reclaimable": size, "freed": freed,
+                        "risk": "low",
+                        "note": f"{len(orphan_results)} uv Python(s) unreferenced by any venv/tool; "
+                                "uv python uninstall",
+                        "details": [r["path"] for r in orphan_results]})
+
+    if active("plugin-old-versions", 3):
+        old_version_results = _apply_plugin_dirs(_find_plugin_old_versions(profiles), dry_run=dry_run, yes=args.yes)
+        size = sum(r["size"] for r in old_version_results)
+        freed = sum(r["freed"] for r in old_version_results)
+        report.append({"target": "plugin-old-versions", "level": 3, "reclaimable": size, "freed": freed,
+                        "risk": "low", "note": f"{len(old_version_results)} superseded plugin version dirs",
+                        "details": [r["path"] for r in old_version_results]})
 
     if active("plugin-node-modules", 3):
         nm_results = _apply_plugin_dirs(_find_plugin_node_modules(profiles), dry_run=dry_run, yes=args.yes)
