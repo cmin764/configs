@@ -1168,6 +1168,13 @@ def _selftest() -> None:
     total = sum(r["reclaimable"] for r in rows if r["reclaimable"] is not None)
     assert total == 100, "totals sum must skip a None reclaimable row without raising"
 
+    # _target_col_width: every known target name must fit within it, so a
+    # long name (plugin-marketplace-binaries) never breaks column alignment
+    # in the human-readable report.
+    col_w = _target_col_width()
+    for target_name in KNOWN_TARGETS:
+        assert len(target_name) <= col_w, f"{target_name!r} wider than the TARGET column ({col_w})"
+
     print("selftest ok")
 
 
@@ -1559,6 +1566,16 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
     return report
 
 
+def _target_col_width() -> int:
+    """Width for the TARGET column in the human-readable report: wide
+    enough for the longest known target name (plugin-marketplace-binaries,
+    27 chars) so it never pushes its own row out of alignment with the
+    header and every other row -- a fixed 16 broke for any target name
+    longer than that.
+    """
+    return max(16, max(len(t) for t in KNOWN_TARGETS))
+
+
 def main() -> None:
     if "--selftest" in sys.argv[1:]:
         _selftest()
@@ -1601,7 +1618,7 @@ def main() -> None:
         print(json.dumps(output, indent=2))
         return
 
-    col_w = 16
+    col_w = _target_col_width()
     print(f"{'TARGET':<{col_w}} {'LVL':>3}  {'RECLAIMABLE':>11}  {'FREED':>8}  RISK        NOTE")
     print("-" * 90)
     for r in report:
