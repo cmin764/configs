@@ -12,6 +12,8 @@ Usage:
     python3 cleanup.py --json
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -92,7 +94,6 @@ _ALLOWLIST_BASE = [
     HOME / ".claude" / "cache",
     HOME / "Library" / "Logs",
     HOME / "Library" / "Developer" / "Xcode" / "DerivedData",
-    HOME / "Library" / "Developer" / "Xcode" / "Archives",
     HOME / "Library" / "Developer" / "CoreSimulator" / "Devices",
     HOME / "Library" / "Containers" / "com.microsoft.teams2",
     HOME / "Library" / "Group Containers" / "UBF8T346G9.com.microsoft.teams",
@@ -105,9 +106,14 @@ ALLOWLIST: list[Path] = []
 
 
 def _build_allowlist(work_dirs: list[Path], profiles: list = None) -> None:
+    # Work dirs are deliberately never added here: they hold live project
+    # data, and _in_allowlist is a blanket "anything under this path is
+    # deletable" check. Stale node_modules/venv dirs under a work dir are
+    # gated by _stale_dir_allowed instead, which requires both the dirname
+    # and a work-dir ancestor -- nothing else under a work dir is ever
+    # deletable by _delete_dir/_apply_dirs.
     ALLOWLIST.clear()
     ALLOWLIST.extend(_ALLOWLIST_BASE)
-    ALLOWLIST.extend(work_dirs)
     for profile in profiles or []:
         ALLOWLIST.append(profile / "plugins" / "cache")
         ALLOWLIST.append(profile / "plugins" / "marketplaces")
@@ -125,22 +131,56 @@ def _in_allowlist(path: Path) -> bool:
     )
 
 
-def _du(path: Path) -> int:
-    """Return directory size in bytes, 0 if missing."""
+_STALE_DIR_NAMES = {"node_modules", ".venv", "venv"}
+
+
+def _stale_dir_allowed(path: Path, work_dirs: list[Path]) -> bool:
+    """Delete guard for stale node_modules/venv dirs, independent of the
+    general ALLOWLIST: the path's own name must be one of the known
+    stale-dir names AND it must sit under one of the work dirs. Work dirs
+    are never added to ALLOWLIST itself (see _build_allowlist), so this is
+    the only way anything under a work dir is ever deletable.
+    """
+    if path.name not in _STALE_DIR_NAMES:
+        return False
+    resolved = path.resolve()
+    return any(w.exists() and resolved.is_relative_to(w.resolve()) for w in work_dirs)
+
+
+def _measure_or_none(path: Path) -> int | None:
+    """Directory size in bytes; 0 if missing; None if `du` fails on an
+    existing path (e.g. macOS TCC blocking Terminal from reading
+    ~/.Trash). None is distinct from 0 so a report row can show
+    'reclaimable: null' with a permission note instead of silently
+    reading as "nothing to clean". See _du for the apply-time helper
+    that collapses a failure to 0.
+    """
     if not path.exists():
         return 0
     result = subprocess.run(
         ["du", "-sk", str(path)], capture_output=True, text=True
     )
     if result.returncode != 0:
-        return 0
+        return None
     try:
         return int(result.stdout.split()[0]) * 1024
     except (IndexError, ValueError):
-        return 0
+        return None
+
+
+def _du(path: Path) -> int:
+    """Directory size in bytes, 0 if missing or unreadable.
+
+    0-on-failure is fine here: this is the internal apply-time helper used
+    for sizing a delete that's already been decided, where a read failure
+    just means nothing gets counted as freed.
+    """
+    measured = _measure_or_none(path)
+    return 0 if measured is None else measured
 
 
 def _run(cmd: list[str], check: bool = False) -> subprocess.CompletedProcess:
+    """Run a subprocess command."""
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
 
@@ -152,7 +192,41 @@ def _has(binary: str) -> bool:
     return result.returncode == 0
 
 
-def _fmt(b: float) -> str:
+def _running(name: str) -> bool:
+    """Whether a process named exactly `name` is running, via pgrep -x.
+
+    Used to skip pulling a live app's cache out from under it: a running
+    Electron app can have open file handles into a "cache" dir, and
+    deleting it mid-session can leave service-worker/IndexedDB state
+    pointing at nothing. pgrep is absent on some minimal systems; treat
+    that as "not running" rather than failing the whole target.
+    """
+    if shutil.which("pgrep") is None:
+        return False
+    result = subprocess.run(["pgrep", "-x", name], capture_output=True)
+    return result.returncode == 0
+
+
+def _electron_app_running(process_name: str, user_data_dir: Path) -> bool:
+    """Whether an Electron/Chromium app looks live: its process by exact
+    name, OR its SingletonLock file in the app's user-data root.
+
+    pgrep -x alone misses a lingering helper process after the main one
+    exits and is brittle to any rename; SingletonLock is the mechanism
+    Electron/Chromium itself uses to detect another live instance of the
+    same profile, so it's a stronger, per-profile signal pgrep can't give.
+    Either signal is enough to call it running -- this only ever widens
+    when a cache delete gets skipped, never narrows it.
+    """
+    if _running(process_name):
+        return True
+    lock = user_data_dir / "SingletonLock"
+    return lock.exists() or lock.is_symlink()
+
+
+def _fmt(b) -> str:
+    if b is None:
+        return "?"
     for unit in ("B", "K", "M", "G"):
         if b < 1024:
             return f"{b:.1f}{unit}"
@@ -179,6 +253,36 @@ def _delete_dir(path: Path, dry_run: bool) -> int:
     return size
 
 
+def _empty_dir(path: Path, dry_run: bool) -> int:
+    """Delete every entry inside `path`, keeping `path` itself. Used where
+    the directory has meaning beyond its contents (~/.Trash's permissions
+    and Finder integration), so recreating it via rmtree-then-nothing is
+    the wrong move, unlike _delete_dir which removes the whole tree.
+    """
+    if not path.exists():
+        return 0
+    if not _in_allowlist(path):
+        print(f"  [SKIP] {path} not in allowlist", file=sys.stderr)
+        return 0
+    total = 0
+    try:
+        entries = list(path.iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        try:
+            size = _du(entry) if entry.is_dir() else entry.stat().st_size
+        except OSError:
+            continue
+        total += size
+        if not dry_run:
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+    return total
+
+
 def _find_electron_cache_dirs(root: Path) -> list[Path]:
     """Find literal cache-named subdirs under an Electron/Chromium app tree.
 
@@ -198,8 +302,24 @@ def _find_electron_cache_dirs(root: Path) -> list[Path]:
     return results
 
 
-def _apply_electron_caches(root: Path, dry_run: bool) -> int:
-    return sum(_delete_dir(d, dry_run) for d in _find_electron_cache_dirs(root))
+def _electron_cache_report(roots: list[Path], process_name: str, dry_run: bool):
+    """Shared measure/apply for Electron cache-named subdirs across `roots`,
+    gated on the app not currently running when applying (process name OR
+    its SingletonLock, see _electron_app_running): a live app can have open
+    handles into a "cache" dir, and deleting it mid-session can leave
+    service-worker/IndexedDB state pointing at nothing (dry-run still
+    measures regardless of whether the app is running). `roots[0]` is used
+    as the app's user-data root for the lock-file check.
+
+    Returns (size, freed, running, detail_paths).
+    """
+    electron_dirs = [d for r in roots for d in _find_electron_cache_dirs(r)]
+    size = sum(_du(d) for d in electron_dirs)
+    running = _electron_app_running(process_name, roots[0])
+    freed = 0
+    if not dry_run and not running:
+        freed = sum(_delete_dir(d, dry_run=False) for d in electron_dirs)
+    return size, freed, running, [str(d) for d in electron_dirs]
 
 
 def _delete_old_files(path: Path, days: int, dry_run: bool) -> int:
@@ -283,13 +403,18 @@ def _parse_docker_size(value: str) -> int:
     return 0
 
 
-def _measure_docker(all_images: bool = False) -> int:
-    """Measure reclaimable docker space.
+def _measure_docker(include_containers: bool = False, all_images: bool = False) -> int:
+    """Measure reclaimable docker space for exactly what the matching apply
+    call will prune.
 
-    With all_images=False (level 2): counts dangling images, stopped containers,
-    and build cache — what 'prune -f' actually frees. Tagged unused images are
-    excluded because 'prune -f' never removes them.
-    With all_images=True (level 3): also counts unused tagged images.
+    Level 2 (include_containers=False, all_images=False): dangling images
+    and build cache only, what 'docker image prune -f' + 'docker builder
+    prune -f' actually free. Stopped containers are excluded even though
+    'docker system df' reports them as reclaimable: level 2 no longer
+    prunes containers, since a stopped dev database without a named volume
+    is real data, not cache.
+    Level 3 turns on include_containers (adds 'container prune -f',
+    confirm-gated) and/or all_images (adds tagged unused images).
     """
     if not _has("docker"):
         return 0
@@ -304,53 +429,68 @@ def _measure_docker(all_images: bool = False) -> int:
         dtype, reclaimable = parts[0].strip(), parts[1].strip()
         if dtype == "Local Volumes":
             continue  # never freed without --volumes
-        if dtype == "Images" and not all_images:
-            # prune -f skips tagged images; count only dangling ones
-            dangling = _run(["docker", "images", "-q", "-f", "dangling=true"])
-            for img_id in dangling.stdout.split():
-                inspect = _run(["docker", "inspect", "--format", "{{.Size}}", img_id])
-                try:
-                    total += int(inspect.stdout.strip())
-                except ValueError:
-                    pass
+        if dtype == "Containers":
+            if include_containers:
+                total += _parse_docker_size(reclaimable)
             continue
-        total += _parse_docker_size(reclaimable)
+        if dtype == "Images":
+            if all_images:
+                total += _parse_docker_size(reclaimable)
+            else:
+                # image prune -f skips tagged images; count only dangling ones
+                dangling = _run(["docker", "images", "-q", "-f", "dangling=true"])
+                for img_id in dangling.stdout.split():
+                    inspect = _run(["docker", "inspect", "--format", "{{.Size}}", img_id])
+                    try:
+                        total += int(inspect.stdout.strip())
+                    except ValueError:
+                        pass
+            continue
+        total += _parse_docker_size(reclaimable)  # Build Cache, etc.
     return total
 
 
-def _apply_docker(all_images: bool, include_dangerous: bool, yes: bool) -> int:
+def _apply_docker(include_containers: bool, all_images: bool, include_dangerous: bool, yes: bool) -> int:
     if not _has("docker"):
         return 0
     result = _run(["docker", "info"])
     if result.returncode != 0:
         print("  [SKIP] Docker daemon not running")
         return 0
-    before = _measure_docker(all_images=all_images or include_dangerous)
+    before = _measure_docker(include_containers=include_containers or include_dangerous,
+                              all_images=all_images or include_dangerous)
     if include_dangerous:
-        if not yes and not _confirm("  docker system prune -a --volumes — destroys ALL unused images and volumes. Continue?"):
+        if not yes and not _confirm("  docker system prune -a --volumes: destroys ALL unused images and volumes. Continue?"):
             return 0
         _run(["docker", "system", "prune", "-a", "--volumes", "-f"])
-    elif all_images:
-        if not yes and not _confirm("  docker system prune -a -f — removes ALL unused images (not just dangling). Continue?"):
-            return 0
-        _run(["docker", "system", "prune", "-a", "-f"])
     else:
-        _run(["docker", "system", "prune", "-f"])
-    after = _measure_docker(all_images=all_images or include_dangerous)
+        if include_containers:
+            if not yes and not _confirm("  docker container prune -f: removes ALL stopped containers. Continue?"):
+                return 0
+            _run(["docker", "container", "prune", "-f"])
+        if all_images:
+            if not yes and not _confirm("  docker image prune -a -f: removes ALL unused images (not just dangling). Continue?"):
+                return 0
+            _run(["docker", "image", "prune", "-a", "-f"])
+        else:
+            _run(["docker", "image", "prune", "-f"])
+        _run(["docker", "builder", "prune", "-f"])
+    after = _measure_docker(include_containers=include_containers or include_dangerous,
+                             all_images=all_images or include_dangerous)
     return max(0, before - after)
 
 
-def _find_stale_node_modules(stale_days: int, work_dirs: list[Path]) -> list[tuple[Path, int]]:
-    """Find top-level node_modules dirs of projects untouched within the stale window.
+def _walk_work_dirs(work_dirs: list[Path]):
+    """Yield (root_path, dirs) under every work dir, depth-capped at
+    _NM_MAX_DEPTH and with hidden dirs pruned after each step.
 
-    Nested node_modules (inside another node_modules) are never returned: deleting
-    one would corrupt a possibly-active project's dependency tree. The walk prunes
-    hidden dirs, never descends into a matched node_modules, and stops at
-    _NM_MAX_DEPTH levels under each work dir.
+    `dirs` is the live list os.walk uses to decide what to descend into --
+    a caller may remove entries from it (to stop descending into a matched
+    dir) exactly as with a plain os.walk loop; hidden-dir pruning is applied
+    on top of whatever the caller left once it resumes. Shared by every
+    scan that needs the same depth cap: stale node_modules/venvs, the
+    "still referenced" venv cfg scan for uv-python-orphans.
     """
-    cutoff = time.time() - stale_days * 86400
-    results = []
-    seen: set[Path] = set()
     for work in work_dirs:
         if not work.exists():
             continue
@@ -361,91 +501,85 @@ def _find_stale_node_modules(stale_days: int, work_dirs: list[Path]) -> list[tup
             if depth >= _NM_MAX_DEPTH:
                 dirs.clear()
                 continue
-            if "node_modules" in dirs:
-                dirs.remove("node_modules")
-                nm = root_path / "node_modules"
-                if nm.resolve() in seen:
-                    continue
-                seen.add(nm.resolve())
-                if not _in_allowlist(nm):
-                    continue
-                if nm.stat().st_mtime > cutoff:
-                    continue
-                # Guard: skip if anything in the project root was touched recently.
-                try:
-                    project_mtime = max(
-                        p.stat().st_mtime for p in root_path.iterdir()
-                        if p.name != "node_modules"
-                    )
-                except (StopIteration, ValueError, OSError):
-                    project_mtime = nm.stat().st_mtime
-                if project_mtime > cutoff:
-                    continue
-                results.append((nm, _du(nm)))
+            yield root_path, dirs
             dirs[:] = [d for d in dirs if not d.startswith(".")]
-    return results
 
 
-def _find_stale_venvs(stale_days: int, work_dirs: list[Path]) -> list[tuple[Path, int]]:
-    """Find .venv/venv dirs of projects untouched within the stale window.
+def _project_touched_since(root_path: Path, exclude_name: str, cutoff: float) -> bool:
+    """Whether anything under root_path (other than exclude_name) has an
+    mtime newer than cutoff, checked at any depth with an early break the
+    moment a qualifying file or dir is found.
 
-    Mirrors _find_stale_node_modules exactly (same depth cap, same
-    "project touched recently" guard); the only difference is the dirname
-    match, gated on a pyvenv.cfg marker so an unrelated directory literally
-    named "venv" is never mistaken for a virtualenv.
+    A directory's own mtime does not change when a file inside it is
+    edited in place, so checking only directory mtimes, or stopping at a
+    fixed depth, can miss a project with no commits and a recent edit
+    several levels down (verified in a scratch repo: a git commit bumps
+    .git's mtime even for a nested-only edit, so that case is covered
+    regardless, but a project with no commits has no other signal). Fresh
+    projects almost always have something recent near the top and exit in
+    a handful of stats; only a genuinely stale project pays the full walk,
+    which is exactly where certainty matters.
+    """
+    try:
+        entries = list(root_path.iterdir())
+    except OSError:
+        return False
+    for p in entries:
+        if p.name == exclude_name:
+            continue
+        try:
+            if p.stat().st_mtime > cutoff:
+                return True
+        except OSError:
+            continue
+        if p.is_dir():
+            try:
+                walk = p.rglob("*")
+            except OSError:
+                continue
+            for q in walk:
+                try:
+                    if q.stat().st_mtime > cutoff:
+                        return True
+                except OSError:
+                    continue
+    return False
+
+
+def _find_stale_dirs(
+    stale_days: int, work_dirs: list[Path], names: tuple[str, ...], marker: str = None
+) -> list[Path]:
+    """Find top-level dirs named one of `names` whose project has been
+    untouched within the stale window. Shared by node_modules and venv
+    staleness checks -- same depth cap, same "project touched recently"
+    guard, same never-descend-into-a-match rule (so a nested node_modules,
+    or a venv inside a venv, is never returned). `marker`, when given,
+    requires that file to exist directly under the matched dir (pyvenv.cfg
+    for venvs, so a directory literally named "venv" that isn't one is
+    never mistaken for a virtualenv).
     """
     cutoff = time.time() - stale_days * 86400
     results = []
     seen: set[Path] = set()
-    for work in work_dirs:
-        if not work.exists():
-            continue
-        base_depth = len(work.resolve().parts)
-        for root, dirs, _files in os.walk(work):
-            root_path = Path(root)
-            depth = len(root_path.resolve().parts) - base_depth
-            if depth >= _NM_MAX_DEPTH:
-                dirs.clear()
+    for root_path, dirs in _walk_work_dirs(work_dirs):
+        matched = [
+            d for d in dirs
+            if d in names and (marker is None or (root_path / d / marker).is_file())
+        ]
+        for name in matched:
+            dirs.remove(name)
+            target = root_path / name
+            if target.resolve() in seen:
                 continue
-            venv_names = [
-                d for d in dirs
-                if d in (".venv", "venv") and (root_path / d / "pyvenv.cfg").is_file()
-            ]
-            for name in venv_names:
-                dirs.remove(name)
-                venv = root_path / name
-                if venv.resolve() in seen:
-                    continue
-                seen.add(venv.resolve())
-                if not _in_allowlist(venv):
-                    continue
-                if venv.stat().st_mtime > cutoff:
-                    continue
-                try:
-                    project_mtime = max(
-                        p.stat().st_mtime for p in root_path.iterdir()
-                        if p.name != name
-                    )
-                except (StopIteration, ValueError, OSError):
-                    project_mtime = venv.stat().st_mtime
-                if project_mtime > cutoff:
-                    continue
-                results.append((venv, _du(venv)))
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
-    return results
-
-
-def _apply_venvs(stale_days: int, work_dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
-    targets = _find_stale_venvs(stale_days, work_dirs)
-    results = []
-    for venv, size in targets:
-        freed = 0
-        if not dry_run:
-            if not yes and not _confirm(f"  Delete {venv} ({_fmt(size)})?"):
+            seen.add(target.resolve())
+            if not _stale_dir_allowed(target, work_dirs):
                 continue
-            shutil.rmtree(venv, ignore_errors=True)
-            freed = size
-        results.append({"path": str(venv), "size": size, "freed": freed})
+            if target.stat().st_mtime > cutoff:
+                continue
+            # Guard: skip if the project was touched recently, at any depth.
+            if _project_touched_since(root_path, name, cutoff):
+                continue
+            results.append(target)
     return results
 
 
@@ -455,27 +589,23 @@ def _find_all_venv_cfgs(work_dirs: list[Path]) -> list[Path]:
     an actively-used venv must count even if it isn't stale.
     """
     results = []
-    for work in work_dirs:
-        if not work.exists():
-            continue
-        base_depth = len(work.resolve().parts)
-        for root, dirs, _files in os.walk(work):
-            root_path = Path(root)
-            depth = len(root_path.resolve().parts) - base_depth
-            if depth >= _NM_MAX_DEPTH:
-                dirs.clear()
-                continue
-            for name in (".venv", "venv"):
-                cfg = root_path / name / "pyvenv.cfg"
-                if cfg.is_file():
-                    results.append(cfg)
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
+    for root_path, _dirs in _walk_work_dirs(work_dirs):
+        for name in (".venv", "venv"):
+            cfg = root_path / name / "pyvenv.cfg"
+            if cfg.is_file():
+                results.append(cfg)
     return results
 
 
-def _find_referenced_uv_pythons(work_dirs: list[Path]) -> set[str]:
-    """Every 'home = ...' path from a project venv's or uv tool venv's
-    pyvenv.cfg -- the interpreter directory each still points at."""
+def _find_referenced_uv_pythons(work_dirs: list[Path]) -> set[Path]:
+    """Every interpreter root a project venv's or uv tool venv's pyvenv.cfg
+    still points at, as a resolved Path (symlinks followed).
+
+    Resolving matters: uv keeps a minor-version symlink
+    (cpython-3.14-... -> cpython-3.14.6-...) alongside the real install dir,
+    and a venv's 'home' can point through either one. Comparing resolved
+    paths means both spellings count as the same referenced interpreter.
+    """
     cfg_paths = _find_all_venv_cfgs(work_dirs)
     tool_dir_result = _run(["uv", "tool", "dir"]) if _has("uv") else None
     if tool_dir_result is not None and tool_dir_result.returncode == 0:
@@ -487,18 +617,35 @@ def _find_referenced_uv_pythons(work_dirs: list[Path]) -> set[str]:
         try:
             for line in cfg.read_text().splitlines():
                 if line.strip().lower().startswith("home"):
-                    referenced.add(line.split("=", 1)[1].strip())
+                    home = line.split("=", 1)[1].strip()
+                    try:
+                        referenced.add(Path(home).resolve().parent)
+                    except OSError:
+                        continue
         except OSError:
             continue
     return referenced
 
 
-def _find_orphan_uv_pythons(work_dirs: list[Path]) -> list[tuple[str, Path]]:
+def _find_orphan_uv_pythons(work_dirs: list[Path], referenced: set = None) -> list[tuple[str, Path]]:
     """uv-managed Python installs not referenced by any venv or uv tool.
 
     Deliberately conservative: only flags a version if `uv python dir` and
-    `uv python list --only-installed` both succeed and the install dir
-    actually exists on disk -- anything ambiguous is left alone.
+    `uv python list --only-installed` both succeed and the resolved install
+    dir is genuinely under `uv python dir`. `uv python list` reports each
+    interpreter's own binary path, which can itself be a minor-version
+    alias (cpython-3.14-... -> cpython-3.14.6-...) or a Homebrew/system
+    Python entirely (verified live: `/opt/homebrew/bin/python3.14`,
+    `/usr/bin/python3` both appear in the listing) -- resolving the path
+    and checking it's an actual descendant of `uv python dir` is what
+    keeps those out, not an incidental is_dir()/is_symlink() check on a
+    name-derived path.
+
+    `referenced` should be computed once up front by the caller, before any
+    target in this run has deleted anything: computing it lazily in here
+    would miss a venv this same run's venv/node_modules target already
+    deleted (see build_report, where the referenced set is built before
+    any target applies for exactly this reason).
     """
     if not _has("uv"):
         return []
@@ -508,31 +655,37 @@ def _find_orphan_uv_pythons(work_dirs: list[Path]) -> list[tuple[str, Path]]:
     python_dir = Path(dir_result.stdout.strip())
     if not python_dir.is_dir():
         return []
+    resolved_python_dir = python_dir.resolve()
     list_result = _run(["uv", "python", "list", "--only-installed"])
     if list_result.returncode != 0:
         return []
-    referenced = _find_referenced_uv_pythons(work_dirs)
+    if referenced is None:
+        referenced = _find_referenced_uv_pythons(work_dirs)
     orphans = []
     for line in list_result.stdout.splitlines():
         parts = line.split()
-        if not parts:
+        if len(parts) < 2:
             continue
-        key = parts[0]
-        install_dir = python_dir / key
-        if not install_dir.is_dir():
+        key, raw_path = parts[0], parts[1]
+        try:
+            interpreter = Path(raw_path).resolve()
+        except OSError:
             continue
-        if any(key in ref for ref in referenced):
+        install_dir = interpreter.parent.parent if interpreter.parent.name == "bin" else interpreter.parent
+        if not install_dir.is_relative_to(resolved_python_dir):
+            continue  # Homebrew/system Python, or anything outside uv's own install dir
+        if install_dir in referenced:
             continue
         orphans.append((key, install_dir))
     return orphans
 
 
-def _apply_uv_python_orphans(work_dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
+def _apply_uv_python_orphans(work_dirs: list[Path], dry_run: bool, yes: bool, referenced: set = None) -> list[dict]:
     """Delegates the actual removal to `uv python uninstall`, not a raw
     directory delete -- matches the skill's CLI-over-rm-rf pattern for
     every other package-manager-owned target (brew/pip/npm)."""
     results = []
-    for key, install_dir in _find_orphan_uv_pythons(work_dirs):
+    for key, install_dir in _find_orphan_uv_pythons(work_dirs, referenced=referenced):
         size = _du(install_dir)
         freed = 0
         if not dry_run:
@@ -578,17 +731,29 @@ def _audit_claude_memory(profiles: list[Path]) -> list[dict]:
     return results
 
 
-def _apply_node_modules(stale_days: int, work_dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
-    targets = _find_stale_node_modules(stale_days, work_dirs)
+def _apply_dirs(paths: list[Path], dry_run: bool, yes: bool, allowed=_in_allowlist) -> list[dict]:
+    """Shared apply logic for any list of directory delete candidates:
+    delete-gate, size, confirm (unless --yes), rmtree whole. Used for
+    stale node_modules/venvs and plugin cache dirs (old versions, plugin
+    node_modules, marketplace .git) alike -- all are directories deleted
+    in one piece, never partially.
+
+    `allowed` defaults to the general ALLOWLIST check; stale node_modules/
+    venv callers pass `_stale_dir_allowed` bound to the work dirs instead,
+    since work dirs are deliberately never added to ALLOWLIST itself.
+    """
     results = []
-    for nm, size in targets:
+    for path in paths:
+        if not allowed(path):
+            continue
+        size = _du(path)
         freed = 0
         if not dry_run:
-            if not yes and not _confirm(f"  Delete {nm} ({_fmt(size)})?"):
+            if not yes and not _confirm(f"  Delete {path} ({_fmt(size)})?"):
                 continue
-            shutil.rmtree(nm, ignore_errors=True)
+            shutil.rmtree(path, ignore_errors=True)
             freed = size
-        results.append({"path": str(nm), "size": size, "freed": freed})
+        results.append({"path": str(path), "size": size, "freed": freed})
     return results
 
 
@@ -598,7 +763,7 @@ def _find_plugin_node_modules(profiles: list[Path]) -> list[Path]:
     Unlike project node_modules, these belong to the plugin runtime, not a
     live workspace, so there's no age/staleness question: they're rebuilt
     automatically the next time the plugin runs. depth is bounded the same
-    way _find_stale_node_modules bounds project scans.
+    way _find_stale_dirs bounds project scans.
     """
     results = []
     for profile in profiles:
@@ -619,31 +784,56 @@ def _find_plugin_node_modules(profiles: list[Path]) -> list[Path]:
     return results
 
 
-def _version_key(name: str) -> tuple[int, ...]:
-    """Parse a dot-separated version dirname into a comparable tuple.
+def _load_plugin_manifest_paths(profile: Path) -> set[Path]:
+    """Resolved installPath values from <profile>/plugins/installed_plugins.json.
 
-    Non-numeric segments (rare, e.g. a "latest" symlink dir) sort as -1 so
-    they never get treated as the newest version.
+    Missing or unparseable manifest -> empty set, which makes
+    _find_plugin_old_versions flag nothing for that profile: unknown state
+    is never a delete candidate.
     """
-    parts = []
-    for seg in name.split("."):
-        parts.append(int(seg) if seg.isdigit() else -1)
-    return tuple(parts)
+    manifest = profile / "plugins" / "installed_plugins.json"
+    if not manifest.is_file():
+        return set()
+    try:
+        data = json.loads(manifest.read_text())
+    except (OSError, json.JSONDecodeError):
+        return set()
+    paths = set()
+    for entries in data.get("plugins", {}).values():
+        for entry in entries:
+            install_path = entry.get("installPath")
+            if not install_path:
+                continue
+            try:
+                paths.add(Path(install_path).resolve())
+            except OSError:
+                continue
+    return paths
 
 
 def _find_plugin_old_versions(profiles: list[Path]) -> list[Path]:
-    """Older version dirs of a plugin that has more than one installed under
-    <profile>/plugins/cache/<vendor>/<plugin>/<version>/.
+    """Version dirs under <profile>/plugins/cache/<vendor>/<plugin>/<version>/
+    that installed_plugins.json does not point at, for a plugin that has at
+    least one dir the manifest does point at.
 
-    Only the highest version is ever used by the plugin runtime, so every
-    other version dir found alongside it is dead weight -- verified against
-    a real duplicate (thedotmack/claude-mem 13.16.1 next to 13.17.1).
+    Driven by the manifest, not version-sorting: Claude Code's active
+    install for a plugin is not always the numerically highest version dir
+    -- it can be a git SHA (verified on this machine:
+    frontend-design@claude-plugins-official installs to a SHA-named dir,
+    not a version number). A plugin with no manifest entry at all is left
+    alone entirely, even if it has multiple version dirs.
     """
     results = []
     for profile in profiles:
         cache_dir = profile / "plugins" / "cache"
         if not cache_dir.exists():
             continue
+        keep = _load_plugin_manifest_paths(profile)
+        manifest = profile / "plugins" / "installed_plugins.json"
+        try:
+            manifest_mtime = manifest.stat().st_mtime
+        except OSError:
+            manifest_mtime = None
         for vendor in cache_dir.iterdir():
             if not vendor.is_dir():
                 continue
@@ -651,10 +841,24 @@ def _find_plugin_old_versions(profiles: list[Path]) -> list[Path]:
                 if not plugin.is_dir():
                     continue
                 versions = [v for v in plugin.iterdir() if v.is_dir()]
-                if len(versions) < 2:
-                    continue
-                newest = max(versions, key=lambda v: _version_key(v.name))
-                results.extend(v for v in versions if v != newest)
+                resolved = {v: v.resolve() for v in versions}
+                if not any(r in keep for r in resolved.values()):
+                    continue  # no manifest entry for this plugin; leave alone
+                for v, r in resolved.items():
+                    if r in keep:
+                        continue
+                    # Install then manifest-update is two steps; a version
+                    # dir created after the manifest was last written might
+                    # be the incoming active install with its manifest
+                    # entry not landed yet. Skip it rather than risk
+                    # deleting the install about to become active.
+                    if manifest_mtime is not None:
+                        try:
+                            if v.stat().st_mtime > manifest_mtime:
+                                continue
+                        except OSError:
+                            pass
+                    results.append(v)
     return results
 
 
@@ -692,24 +896,6 @@ def _find_plugin_marketplace_binaries(profiles: list[Path]) -> list[Path]:
             except OSError:
                 continue
             results.append(path)
-    return results
-
-
-def _apply_plugin_dirs(dirs: list[Path], dry_run: bool, yes: bool) -> list[dict]:
-    """Shared apply logic for plugin-node-modules and plugin-marketplace-git:
-    both are directories, allowlist-gated, deleted whole via rmtree."""
-    results = []
-    for path in dirs:
-        if not _in_allowlist(path):
-            continue
-        size = _du(path)
-        freed = 0
-        if not dry_run:
-            if not yes and not _confirm(f"  Delete {path} ({_fmt(size)})?"):
-                continue
-            shutil.rmtree(path, ignore_errors=True)
-            freed = size
-        results.append({"path": str(path), "size": size, "freed": freed})
     return results
 
 
@@ -770,15 +956,23 @@ def _prune_claude_chats(profiles: list[Path], days: int, dry_run: bool) -> int:
     return total
 
 
-def _clean_claude_tmp(dry_run: bool) -> int:
-    """Remove aged entries from Claude Code's tmp dir, sparing live sessions."""
-    if not _CLAUDE_TMP.exists():
+def _delete_aged_entries(path: Path, max_age_s: float, dry_run: bool) -> int:
+    """Delete top-level entries of `path` older than `max_age_s`, keeping
+    `path` itself and anything touched more recently. A filesystem fact
+    (mtime) rather than a process-name guess: a `pgrep` check for whatever
+    process might be using `path` can't distinguish the live instance from
+    an unrelated background daemon of the same name that's always running
+    (verified: Claude Code's own bg-spare/bg-pty-host daemons keep `pgrep
+    -x claude` matching permanently, which would make a process-based
+    guard here never clean anything at all).
+    """
+    if not path.exists():
         return 0
-    if not _in_allowlist(_CLAUDE_TMP):
+    if not _in_allowlist(path):
         return 0
-    cutoff = time.time() - _CLAUDE_TMP_MAX_AGE_S
+    cutoff = time.time() - max_age_s
     total = 0
-    for entry in _CLAUDE_TMP.iterdir():
+    for entry in path.iterdir():
         try:
             if entry.stat().st_mtime >= cutoff:
                 continue
@@ -792,6 +986,11 @@ def _clean_claude_tmp(dry_run: bool) -> int:
             else:
                 entry.unlink(missing_ok=True)
     return total
+
+
+def _clean_claude_tmp(dry_run: bool) -> int:
+    """Remove aged entries from Claude Code's tmp dir, sparing live sessions."""
+    return _delete_aged_entries(_CLAUDE_TMP, _CLAUDE_TMP_MAX_AGE_S, dry_run)
 
 
 # ---------------------------------------------------------------------------
@@ -853,12 +1052,27 @@ def _selftest() -> None:
         big_pdf = plans / "deck.pdf"
         big_pdf.write_bytes(b"0" * (_MARKETPLACE_BINARY_MIN_SIZE + 1))
 
-        # A second plugin with two version dirs installed side by side --
-        # the older one must be the only thing plugin-old-versions flags.
+        # Plugin version pruning is manifest-driven, not version-sorted: the
+        # active install can be a git SHA dirname, not the highest version.
+        # thedotmack/claude-mem has a SHA-named active install with an older
+        # numeric version dir alongside it -- the manifest points at the SHA.
+        sha_dir = profile / "plugins" / "cache" / "thedotmack" / "claude-mem" / "b819188d2eea"
         old_version = profile / "plugins" / "cache" / "thedotmack" / "claude-mem" / "13.16.1"
-        new_version = profile / "plugins" / "cache" / "thedotmack" / "claude-mem" / "13.17.1"
+        sha_dir.mkdir(parents=True)
         old_version.mkdir(parents=True)
-        new_version.mkdir(parents=True)
+        (profile / "plugins" / "installed_plugins.json").write_text(json.dumps({
+            "version": 2,
+            "plugins": {
+                "claude-mem@thedotmack": [{"installPath": str(sha_dir)}],
+            },
+        }))
+
+        # A plugin with two version dirs but no manifest entry at all must
+        # never be flagged -- unknown state is never a delete candidate.
+        unmanifested_old = profile / "plugins" / "cache" / "thedotmack" / "q" / "1.0.0"
+        unmanifested_new = profile / "plugins" / "cache" / "thedotmack" / "q" / "1.1.0"
+        unmanifested_old.mkdir(parents=True)
+        unmanifested_new.mkdir(parents=True)
 
         real_home = HOME
         HOME = tmp_path
@@ -871,27 +1085,70 @@ def _selftest() -> None:
             assert big_pdf in _find_plugin_marketplace_binaries(profiles), \
                 "large marketplace binary not found"
             old_versions = _find_plugin_old_versions(profiles)
-            assert old_version in old_versions, "older plugin version dir not flagged"
-            assert new_version not in old_versions, "newest plugin version dir wrongly flagged"
+            assert old_version in old_versions, "superseded version dir not flagged"
+            assert sha_dir not in old_versions, \
+                "manifest-referenced SHA install wrongly flagged"
+            assert unmanifested_old not in old_versions, \
+                "unmanifested plugin version wrongly flagged"
+            assert unmanifested_new not in old_versions, \
+                "unmanifested plugin version wrongly flagged"
         finally:
             HOME = real_home
 
     # uv-python-orphans: a venv's pyvenv.cfg must mark its interpreter as
-    # referenced; an interpreter no pyvenv.cfg points at must not be.
+    # referenced; an interpreter no pyvenv.cfg points at must not be. A venv
+    # that references the interpreter through uv's minor-version symlink
+    # (cpython-3.14-x -> cpython-3.14.6-x) must resolve to the same real
+    # dir as one referencing it directly, so the real install is never
+    # flagged as an orphan just because of which spelling a venv used.
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         work_dir = tmp_path / "work"
+        python_dir = tmp_path / "uv-python"
+        real_dir = python_dir / "cpython-3.14.6-macos-aarch64-none"
+        (real_dir / "bin").mkdir(parents=True)
+        symlink_dir = python_dir / "cpython-3.14-macos-aarch64-none"
+        symlink_dir.symlink_to(real_dir)
+        orphan_dir = python_dir / "cpython-3.13.15-macos-aarch64-none"
+        (orphan_dir / "bin").mkdir(parents=True)
+
         venv_dir = work_dir / "proj" / ".venv"
         venv_dir.mkdir(parents=True)
         (venv_dir / "pyvenv.cfg").write_text(
-            "home = /fake/uv/python/cpython-3.14.6-macos-aarch64-none/bin\n"
-            "version = 3.14.6\n"
+            f"home = {symlink_dir / 'bin'}\nversion = 3.14.6\n"
         )
         referenced = _find_referenced_uv_pythons([work_dir])
-        assert any("cpython-3.14.6-macos-aarch64-none" in r for r in referenced), \
-            "referenced uv python not extracted from pyvenv.cfg"
-        assert not any("cpython-3.13.15-macos-aarch64-none" in r for r in referenced), \
+        assert real_dir.resolve() in referenced, \
+            "symlinked uv python home not resolved to its real interpreter dir"
+        assert orphan_dir.resolve() not in referenced, \
             "unreferenced uv python incorrectly counted as referenced"
+
+    # _measure_or_none vs _du: an unreadable existing path must report None
+    # (not 0), so a report row can show reclaimable: null instead of
+    # silently reading as "nothing to clean"; _du must coerce that same
+    # failure back to 0 for apply-time arithmetic; and summing reclaimable
+    # across mixed None/int rows (as build_report's total does) must skip
+    # the Nones rather than raise. A throwaway-HOME fixture run as the
+    # owning user never actually hits a du permission failure, so this is
+    # the only place that failure path gets exercised at all. Skipped as
+    # root (geteuid() == 0): root ignores permission bits, so chmod 000
+    # wouldn't actually block du there, and the assertion would fail for a
+    # reason unrelated to the code under test.
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        with tempfile.TemporaryDirectory() as tmp:
+            blocked = Path(tmp) / "blocked"
+            blocked.mkdir()
+            (blocked / "f").write_text("x")
+            os.chmod(blocked, 0o000)
+            try:
+                measured = _measure_or_none(blocked)
+                assert measured is None, f"unreadable path must report None, got {measured}"
+                assert _du(blocked) == 0, "_du must coerce an unreadable path's failure to 0"
+            finally:
+                os.chmod(blocked, 0o755)  # restore so TemporaryDirectory cleanup can remove it
+    rows = [{"reclaimable": None}, {"reclaimable": 100}]
+    total = sum(r["reclaimable"] for r in rows if r["reclaimable"] is not None)
+    assert total == 100, "totals sum must skip a None reclaimable row without raising"
 
     print("selftest ok")
 
@@ -907,7 +1164,7 @@ def _positive_int(value: str) -> int:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Mac disk cleanup — dry-run by default.",
+        description="Mac disk cleanup: dry-run by default.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--level", type=int, default=1, choices=[1, 2, 3],
@@ -948,6 +1205,15 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
     skip = set(args.skip.split(",")) - {""} if args.skip else set()
     dry_run = not args.apply
     level = args.level
+
+    # Computed once, up front, before any target below has deleted anything:
+    # venv/node_modules apply earlier in this function than uv-python-orphans
+    # does, and if the referenced set were recomputed lazily inside that
+    # target it would no longer see a pyvenv.cfg this same run just deleted,
+    # turning its own interpreter into a false "orphan" and uninstalling it
+    # in the same --apply. Computing it here means the orphan decision
+    # always reflects the state before this run touched anything.
+    referenced_uv_pythons = _find_referenced_uv_pythons(work_dirs)
 
     def active(name: str, target_level: int) -> bool:
         if target_level > level:
@@ -1000,15 +1266,6 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
         report.append({"target": "bun", "level": 1, "reclaimable": size, "freed": freed,
                         "risk": "low", "note": "~/.bun/install/cache"})
 
-    if active("trash", 1):
-        path = HOME / ".Trash"
-        size = _du(path)
-        freed = 0
-        if not dry_run and size > 0:
-            freed = _delete_dir(path, dry_run=False)
-        report.append({"target": "trash", "level": 1, "reclaimable": size, "freed": freed,
-                        "risk": "low", "note": "~/.Trash"})
-
     if active("claude-tmp", 1):
         size = _clean_claude_tmp(dry_run=True)
         freed = 0
@@ -1020,57 +1277,81 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
 
     # --- Level 2: app caches + logs + Claude ---
 
+    if active("trash", 2):
+        # Not a package-manager cache, so this moved out of level 1: Trash
+        # is the undo buffer, not a cache. Also: ~/.Trash is TCC-blocked
+        # for Terminal on macOS by default, which _measure_or_none surfaces
+        # as reclaimable: null instead of a silent "nothing to clean".
+        path = HOME / ".Trash"
+        size = _measure_or_none(path)
+        freed = 0
+        if size is None:
+            note = "unreadable, grant Full Disk Access to the terminal"
+        else:
+            note = "~/.Trash"
+            if not dry_run and size > 0:
+                freed = _empty_dir(path, dry_run=False)
+        report.append({"target": "trash", "level": 2, "reclaimable": size, "freed": freed,
+                        "risk": "low", "note": note})
+
     if active("chrome", 2):
         path = HOME / "Library" / "Caches" / "Google" / "Chrome"
         app_support = HOME / "Library" / "Application Support" / "Google" / "Chrome"
-        size = _du(path) + _apply_electron_caches(app_support, dry_run=True)
-        freed = 0
-        if not dry_run:
-            freed = _delete_dir(path, dry_run=False) + _apply_electron_caches(app_support, dry_run=False)
+        size, freed, running, details = _electron_cache_report([app_support], "Google Chrome", dry_run)
+        size += _du(path)
+        if path.exists():
+            details = [str(path)] + details
+        if not dry_run and not running:
+            freed += _delete_dir(path, dry_run=False)
+        if running and not dry_run:
+            note = "Google Chrome running, skipped -- quit Chrome first"
+        else:
+            note = "quit Chrome before --apply; App Support cache subdirs only, profile/bookmarks untouched"
         report.append({"target": "chrome", "level": 2, "reclaimable": size, "freed": freed,
-                        "risk": "low",
-                        "note": "close Chrome first; App Support cache subdirs only, profile/bookmarks untouched"})
+                        "risk": "low", "note": note, "details": details})
 
     if active("teams", 2):
         teams_roots = [
             HOME / "Library" / "Containers" / "com.microsoft.teams2",
             HOME / "Library" / "Group Containers" / "UBF8T346G9.com.microsoft.teams",
         ]
-        size = sum(_apply_electron_caches(r, dry_run=True) for r in teams_roots)
-        freed = 0
-        if not dry_run and size > 0:
-            freed = sum(_apply_electron_caches(r, dry_run=False) for r in teams_roots)
+        size, freed, running, details = _electron_cache_report(teams_roots, "MSTeams", dry_run)
+        if running and not dry_run:
+            note = "MSTeams running, skipped -- quit Teams first"
+        else:
+            note = "cache subdirs only; login/session preserved"
         report.append({"target": "teams", "level": 2, "reclaimable": size, "freed": freed,
-                        "risk": "low", "note": "cache subdirs only; login/session preserved"})
+                        "risk": "low", "note": note, "details": details})
 
     if active("claude-desktop", 2):
         path = HOME / "Library" / "Application Support" / "Claude"
-        size = _apply_electron_caches(path, dry_run=True)
-        freed = 0
-        if not dry_run and size > 0:
-            freed = _apply_electron_caches(path, dry_run=False)
+        size, freed, running, details = _electron_cache_report([path], "Claude", dry_run)
+        if running and not dry_run:
+            note = "Claude running, skipped -- quit Claude desktop first"
+        else:
+            note = ("cache subdirs only; chat history/settings untouched, as is "
+                     "vm_bundles (Cowork sandbox VM disk image, not cache -- "
+                     "usually the biggest item here, deleting it forces a rebuild "
+                     "from its bundled .zst next time Cowork runs)")
         report.append({"target": "claude-desktop", "level": 2, "reclaimable": size, "freed": freed,
-                        "risk": "low",
-                        "note": "cache subdirs only; chat history/settings untouched, as is "
-                                "vm_bundles (Cowork sandbox VM disk image, not cache -- "
-                                "usually the biggest item here, deleting it forces a rebuild "
-                                "from its bundled .zst next time Cowork runs)"})
+                        "risk": "low", "note": note, "details": details})
 
     if active("discord", 2):
         path = HOME / "Library" / "Application Support" / "discord"
-        size = _apply_electron_caches(path, dry_run=True)
-        freed = 0
-        if not dry_run and size > 0:
-            freed = _apply_electron_caches(path, dry_run=False)
+        size, freed, running, details = _electron_cache_report([path], "Discord", dry_run)
+        if running and not dry_run:
+            note = "Discord running, skipped -- quit Discord first"
+        else:
+            note = "cache subdirs only; login preserved"
         report.append({"target": "discord", "level": 2, "reclaimable": size, "freed": freed,
-                        "risk": "low", "note": "cache subdirs only; login preserved"})
+                        "risk": "low", "note": note, "details": details})
 
     if active("claude-memory", 2):
         mem_results = _audit_claude_memory(profiles)
         total_size = sum(r["size"] for r in mem_results)
         report.append({"target": "claude-memory", "level": 2, "reclaimable": 0, "freed": 0,
                         "risk": "info",
-                        "note": f"{_fmt(total_size)} across {len(mem_results)} project dirs — "
+                        "note": f"{_fmt(total_size)} across {len(mem_results)} project dirs: "
                                 "report-only, review manually (never auto-deleted)",
                         "details": [r["path"] for r in mem_results]})
 
@@ -1095,16 +1376,29 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
                         "risk": "low", "note": f"logs older than {args.stale_days}d"})
 
     if active("claude-cache", 2):
-        claude_paths = [
-            p / sub for p in profiles for sub in ("shell-snapshots", "paste-cache", "cache")
-        ]
-        size = sum(_du(p) for p in claude_paths)
+        # shell-snapshots holds the live session's own snapshot file;
+        # deleting it out from under a running Claude Code process kills
+        # every Bash call in that session. Age-gated like claude-tmp
+        # rather than process-checked: a pgrep check can't tell the live
+        # session apart from Claude Code's own background daemons, which
+        # keep `pgrep -x claude` matching permanently (verified live), so
+        # a process-based guard here would never clean anything at all.
+        size = 0
         freed = 0
-        if not dry_run:
-            for p in claude_paths:
-                freed += _delete_dir(p, dry_run=False)
+        for p in profiles:
+            snap_size = _delete_aged_entries(p / "shell-snapshots", _CLAUDE_TMP_MAX_AGE_S, dry_run=True)
+            size += snap_size
+            if not dry_run:
+                freed += _delete_aged_entries(p / "shell-snapshots", _CLAUDE_TMP_MAX_AGE_S, dry_run=False)
+            for sub in ("paste-cache", "cache"):
+                path = p / sub
+                size += _du(path)
+                if not dry_run:
+                    freed += _delete_dir(path, dry_run=False)
         report.append({"target": "claude-cache", "level": 2, "reclaimable": size, "freed": freed,
-                        "risk": "low", "note": "shell-snapshots, paste-cache, cache dirs"})
+                        "risk": "low",
+                        "note": f"shell-snapshots entries older than 1d (live session preserved), "
+                                "paste-cache, cache dirs"})
 
     if active("claude-chats", 2):
         size = _prune_claude_chats(profiles, args.chats_older_than, dry_run=True)
@@ -1117,18 +1411,25 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
 
     if active("docker", 2):
         all_imgs = level >= 3
-        size = _measure_docker(all_images=all_imgs)
+        include_containers = level >= 3
+        size = _measure_docker(include_containers=include_containers, all_images=all_imgs)
         freed = 0
         if not dry_run:
-            freed = _apply_docker(all_images=all_imgs, include_dangerous=False, yes=args.yes)
-        note = ("prune -a -f (no volumes)" if all_imgs else "prune -f (no volumes, not -a)")
+            freed = _apply_docker(include_containers=include_containers, all_images=all_imgs,
+                                   include_dangerous=False, yes=args.yes)
+        if all_imgs:
+            note = "image prune -a -f + builder prune -f + container prune -f (no volumes)"
+        else:
+            note = "image prune -f + builder prune -f (dangling only, no volumes, containers untouched)"
         report.append({"target": "docker", "level": 2, "reclaimable": size, "freed": freed,
                         "risk": "med", "note": note})
 
     # --- Level 3: aggressive ---
 
     if active("node_modules", 3):
-        nm_results = _apply_node_modules(args.stale_days, work_dirs, dry_run=dry_run, yes=args.yes)
+        nm_paths = _find_stale_dirs(args.stale_days, work_dirs, ("node_modules",))
+        nm_results = _apply_dirs(nm_paths, dry_run=dry_run, yes=args.yes,
+                                  allowed=lambda p: _stale_dir_allowed(p, work_dirs))
         size = sum(r["size"] for r in nm_results)
         freed = sum(r["freed"] for r in nm_results)
         note = f"{len(nm_results)} dirs untouched >{args.stale_days}d; reinstall needed"
@@ -1137,31 +1438,36 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
                         "details": [r["path"] for r in nm_results]})
 
     if active("xcode", 3):
+        # Archives deliberately excluded: they hold the dSYMs for shipped
+        # builds, the only copy, not a cache -- without them a crash report
+        # from a user can't be symbolicated. DerivedData is a pure build
+        # cache and always safe to rebuild.
         build_paths = [
             HOME / "Library" / "Developer" / "Xcode" / "DerivedData",
-            HOME / "Library" / "Developer" / "Xcode" / "Archives",
         ]
         sim_path = HOME / "Library" / "Developer" / "CoreSimulator" / "Devices"
         size = sum(_du(p) for p in build_paths) + _du(sim_path)
         freed = 0
         if not dry_run and size > 0:
-            if args.yes or _confirm(f"  Delete Xcode DerivedData/Archives + prune simulators ({_fmt(size)})?"):
+            if args.yes or _confirm(f"  Delete Xcode DerivedData + prune simulators ({_fmt(size)})?"):
                 for p in build_paths:
                     freed += _delete_dir(p, dry_run=False)
-                # Official CLI removes only orphaned simulator data; fall back to
-                # deleting the dir when xcrun is unavailable.
-                if sim_path.exists():
+                # Only the official CLI's own notion of "unavailable" is
+                # ever removed. No xcrun fallback: rmtree-ing the whole
+                # Devices tree would wipe every simulator, available ones
+                # included, along with their installed app containers and
+                # databases -- not what "unavailable simulators" promises.
+                if sim_path.exists() and _has("xcrun"):
                     before = _du(sim_path)
-                    if _has("xcrun"):
-                        _run(["xcrun", "simctl", "delete", "unavailable"])
-                        freed += max(0, before - _du(sim_path))
-                    else:
-                        freed += _delete_dir(sim_path, dry_run=False)
+                    _run(["xcrun", "simctl", "delete", "unavailable"])
+                    freed += max(0, before - _du(sim_path))
         report.append({"target": "xcode", "level": 3, "reclaimable": size, "freed": freed,
-                        "risk": "med", "note": "DerivedData + Archives + unavailable simulators"})
+                        "risk": "med", "note": "DerivedData + unavailable simulators (Archives kept: shipped-build dSYMs, not a cache)"})
 
     if active("venv", 3):
-        venv_results = _apply_venvs(args.stale_days, work_dirs, dry_run=dry_run, yes=args.yes)
+        venv_paths = _find_stale_dirs(args.stale_days, work_dirs, (".venv", "venv"), marker="pyvenv.cfg")
+        venv_results = _apply_dirs(venv_paths, dry_run=dry_run, yes=args.yes,
+                                    allowed=lambda p: _stale_dir_allowed(p, work_dirs))
         size = sum(r["size"] for r in venv_results)
         freed = sum(r["freed"] for r in venv_results)
         note = f"{len(venv_results)} dirs untouched >{args.stale_days}d; uv sync/pip install needed"
@@ -1170,7 +1476,8 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
                         "details": [r["path"] for r in venv_results]})
 
     if active("uv-python-orphans", 3):
-        orphan_results = _apply_uv_python_orphans(work_dirs, dry_run=dry_run, yes=args.yes)
+        orphan_results = _apply_uv_python_orphans(work_dirs, dry_run=dry_run, yes=args.yes,
+                                                    referenced=referenced_uv_pythons)
         size = sum(r["size"] for r in orphan_results)
         freed = sum(r["freed"] for r in orphan_results)
         report.append({"target": "uv-python-orphans", "level": 3, "reclaimable": size, "freed": freed,
@@ -1180,7 +1487,7 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
                         "details": [r["path"] for r in orphan_results]})
 
     if active("plugin-old-versions", 3):
-        old_version_results = _apply_plugin_dirs(_find_plugin_old_versions(profiles), dry_run=dry_run, yes=args.yes)
+        old_version_results = _apply_dirs(_find_plugin_old_versions(profiles), dry_run=dry_run, yes=args.yes)
         size = sum(r["size"] for r in old_version_results)
         freed = sum(r["freed"] for r in old_version_results)
         report.append({"target": "plugin-old-versions", "level": 3, "reclaimable": size, "freed": freed,
@@ -1188,15 +1495,17 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
                         "details": [r["path"] for r in old_version_results]})
 
     if active("plugin-node-modules", 3):
-        nm_results = _apply_plugin_dirs(_find_plugin_node_modules(profiles), dry_run=dry_run, yes=args.yes)
+        nm_results = _apply_dirs(_find_plugin_node_modules(profiles), dry_run=dry_run, yes=args.yes)
         size = sum(r["size"] for r in nm_results)
         freed = sum(r["freed"] for r in nm_results)
         report.append({"target": "plugin-node-modules", "level": 3, "reclaimable": size, "freed": freed,
-                        "risk": "med", "note": f"{len(nm_results)} dirs; reinstalled on next plugin run",
+                        "risk": "med",
+                        "note": f"{len(nm_results)} dirs; reinstalled on next plugin run "
+                                "(rebuild path unverified, try once on a secondary profile first)",
                         "details": [r["path"] for r in nm_results]})
 
     if active("plugin-marketplace-git", 3):
-        git_results = _apply_plugin_dirs(_find_plugin_marketplace_git(profiles), dry_run=dry_run, yes=args.yes)
+        git_results = _apply_dirs(_find_plugin_marketplace_git(profiles), dry_run=dry_run, yes=args.yes)
         size = sum(r["size"] for r in git_results)
         freed = sum(r["freed"] for r in git_results)
         report.append({"target": "plugin-marketplace-git", "level": 3, "reclaimable": size, "freed": freed,
@@ -1214,12 +1523,13 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
     # --- Dangerous ---
 
     if args.include_dangerous and active("docker-volumes", 3):
-        size = _measure_docker(all_images=True)
+        size = _measure_docker(include_containers=True, all_images=True)
         freed = 0
         if not dry_run:
-            freed = _apply_docker(all_images=True, include_dangerous=True, yes=args.yes)
+            freed = _apply_docker(include_containers=True, all_images=True,
+                                   include_dangerous=True, yes=args.yes)
         report.append({"target": "docker-volumes", "level": 3, "reclaimable": size, "freed": freed,
-                        "risk": "HIGH", "note": "docker system prune -a --volumes — ALL images + volumes"})
+                        "risk": "HIGH", "note": "docker system prune -a --volumes: ALL images and volumes"})
 
     return report
 
@@ -1247,7 +1557,10 @@ def main() -> None:
     report = build_report(args, work_dirs, profiles)
 
     free_after = shutil.disk_usage("/").free
-    total_reclaimable = sum(r["reclaimable"] for r in report)
+    # A row's reclaimable can be None (unreadable path, see _measure_or_none);
+    # excluded from the total rather than crashing the sum, since it isn't a
+    # known quantity of freeable space.
+    total_reclaimable = sum(r["reclaimable"] for r in report if r["reclaimable"] is not None)
     total_freed = sum(r["freed"] for r in report)
 
     if args.json_out:
