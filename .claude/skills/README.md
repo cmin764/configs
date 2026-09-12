@@ -28,13 +28,13 @@ No config required. Clone the repo, open Claude Code, done.
 | [disk-janitor](./disk-janitor/) | Detects reclaimable disk space on macOS and cleans it via a tiered Python script (dry-run by default, progressive aggressiveness levels) |
 | [frontend-review](./frontend-review/) | Stack-aware pre-merge review for any React/Next.js project: detects the stack, applies a unified a11y/SEO/security/perf/TS/Tailwind checklist, fixes criticals (tiered via `--fix`) |
 | [job-fit-assessor](./job-fit-assessor/) | Assesses a candidate profile against any JD, producing a scored, filterable React artifact with per-requirement annotations |
-| [travel-planner](./travel-planner/) | Generates a paired itinerary table + interactive Leaflet route map from raw trip data (dates, flights, transport legs, activities) |
+| [travel-planner](./travel-planner/) | Generates a paired itinerary table and interactive Leaflet route map from raw trip data (dates, flights, transport legs, activities) |
 
 ---
 
 ## Using disk-janitor
 
-Run from anywhere — the script path is relative to the repo root:
+Run from anywhere: the script path is relative to the repo root:
 
 ```bash
 # See what's reclaimable (dry-run, safe to run anytime)
@@ -62,7 +62,7 @@ Claude runs the dry-run first and walks you through the cleanup interactively.
 
 ### In Claude Code
 
-Pass a profile directory and a JD — Claude does the rest:
+Pass a profile directory and a JD: Claude does the rest:
 
 ```
 Assess my fit against this role: https://example.com/jobs/principal-engineer
@@ -120,7 +120,7 @@ git clone https://github.com/anthropics/skills.git ~/tools/anthropic-skills
 cd ~/tools/anthropic-skills/skills/skill-creator
 python3 -m scripts.package_skill /path/to/repo/.claude/skills/job-fit-assessor
 # outputs: job-fit-assessor.skill in the current directory
-# note: requires pyyaml — install once with: pip3 install pyyaml
+# note: requires pyyaml; install once with: pip3 install pyyaml
 ```
 
 ### Upload to Claude Chat
@@ -141,7 +141,7 @@ Edit in the repo, test in Claude Code, then repackage and re-upload for Chat.
 # 1. Edit
 vim .claude/skills/job-fit-assessor/SKILL.md
 
-# 2. Test locally — open Claude Code and run an assessment
+# 2. Test locally: open Claude Code and run an assessment
 
 # 3. Commit
 git add .claude/skills/job-fit-assessor/

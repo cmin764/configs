@@ -13,7 +13,7 @@ Derived from a working Colombia route map. Apply this pattern exactly.
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>[Country] Route Map — [Traveler names] [Year]</title>
+<title>[Country] Route Map: [Traveler names] [Year]</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-polylinedecorator/1.6.0/leaflet.polylineDecorator.min.js"></script>
@@ -64,8 +64,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 const modeColors = {
   FLY:      '#1d4ed8',  // blue
   BUS:      '#b45309',  // amber
-  WILLY:    '#b45309',  // amber (jeep/colectivo — same as BUS)
-  SHUTTLE:  '#d97706',  // amber (pre-booked shared van — Central America, tourist shuttles)
+  WILLY:    '#b45309',  // amber (jeep/colectivo: same as BUS)
+  SHUTTLE:  '#d97706',  // amber (pre-booked shared van: Central America, tourist shuttles)
   BOAT:     '#0891b2',  // teal
   TAXI:     '#6b7280',  // grey
   TRANSFER: '#16a34a',  // green (pre-booked private)
@@ -90,13 +90,13 @@ const N = {
 ```
 
 Use 3-letter IATA codes or short alphanumeric keys. Look up approximate
-coordinates for cities — exact precision not required (within 0.1° is fine).
+coordinates for cities: exact precision not required (within 0.1° is fine).
 
 ---
 
 ## Core helper functions
 
-### `mid()` — midpoint with offset for label placement
+### `mid()`: midpoint with offset for label placement
 
 ```js
 function mid(a, b, dlat, dlon) {
@@ -106,7 +106,7 @@ function mid(a, b, dlat, dlon) {
 
 Adjust `dlat`/`dlon` to push labels away from overlapping arcs.
 
-### `drawArc()` — polyline with optional arrowhead
+### `drawArc()`: polyline with optional arrowhead
 
 ```js
 function drawArc(pts, color, weight, dash, arrowOffset) {
@@ -126,7 +126,7 @@ function drawArc(pts, color, weight, dash, arrowOffset) {
 
 Parameters: `pts` = array of `[lat,lng]`, `dash` = dashArray string or null, `arrowOffset` = '55%' default.
 
-### `arcLabel()` — mode + distance/time label at a point
+### `arcLabel()`: mode + distance/time label at a point
 
 ```js
 function arcLabel(mode, dist, time, lat, lon) {
@@ -230,13 +230,13 @@ Neighborhood / sector<br>
 ## Signal / WiFi zones
 
 ```js
-// Red — fully offline inside this area
+// Red: fully offline inside this area
 L.circle(N.TAY, { radius: 9000, color:'rgba(239,68,68,0.65)', fillColor:'rgba(239,68,68,0.18)', fillOpacity:1, weight:1.5 })
-  .addTo(map).bindTooltip('Location name — fully offline inside');
+  .addTo(map).bindTooltip('Location name: fully offline inside');
 
-// Orange — variable WiFi, confirm before booking
+// Orange: variable WiFi, confirm before booking
 L.circle(N.PEI, { radius: 30000, color:'rgba(251,146,60,0.5)', fillColor:'rgba(251,146,60,0.1)', fillOpacity:1, weight:1.5 })
-  .addTo(map).bindTooltip('Location name — WiFi varies. Always confirm before booking.');
+  .addTo(map).bindTooltip('Location name: WiFi varies. Always confirm before booking.');
 ```
 
 Radius in meters. Match to real geographic extent of the area.
@@ -277,4 +277,4 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map
 ```
 
 Set `fitBounds` to a rectangle that contains all markers with some padding.
-Never hardcode a center coordinate — always derive from the data.
+Never hardcode a center coordinate: always derive from the data.

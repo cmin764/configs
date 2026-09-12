@@ -14,6 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
+      - name: Environment parity check (this workflow targets Apple Silicon)
+        run: |
+          sw_vers -productVersion
+          uname -m
+          [ "$(uname -m)" = "arm64" ] || { echo "runner is not arm64, macos-latest may have moved"; exit 1; }
+
       - name: Run selftest (verify the checker itself works)
         run: python3 .github/scripts/check_configs.py --selftest
 
@@ -28,3 +34,22 @@ jobs:
 
       - name: sync.py --new-profile end to end (throwaway HOME, shimmed claude)
         run: bash .github/scripts/test_new_profile.sh
+
+      - name: disk-janitor selftest, on the Command Line Tools python (3.9.6, what a fresh Mac has)
+        run: /usr/bin/python3 .claude/skills/disk-janitor/scripts/cleanup.py --selftest
+
+      - name: disk-janitor delete-contract fixture (throwaway HOME, shimmed uv/docker/pgrep)
+        run: bash .github/scripts/test_disk_janitor.sh
+
+      - name: disk-janitor smoke test against the runner's real HOME (dry-run, no CLI shims)
+        run: |
+          python3 .claude/skills/disk-janitor/scripts/cleanup.py --level 3 --json --skip claude-tmp > /tmp/report.json
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/report.json'))
+          assert d['mode'] == 'dry-run'
+          keys = {'target', 'level', 'reclaimable', 'freed', 'risk', 'note'}
+          for t in d['targets']:
+              assert keys <= set(t), t
+          print('smoke test ok,', len(d['targets']), 'targets reported')
+          "

@@ -124,5 +124,5 @@ that become empty. "All" resets.
 - No emoji, stars, progress bars, or loading spinners.
 - No footer with company name or branding.
 - No localStorage, sessionStorage, or external API calls.
-- No required props — data is fully self-contained.
+- No required props: data is fully self-contained.
 - Never Inter, Roboto, or system-ui. DM Mono + IBM Plex Sans only.

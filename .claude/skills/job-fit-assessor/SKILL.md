@@ -2,7 +2,7 @@
 name: job-fit-assessor
 description: >
   Produces a structured, interactive React artifact that annotates a job description
-  against a candidate profile, surfacing strong fits, partial fits, and gaps — each
+  against a candidate profile, surfacing strong fits, partial fits, and gaps, each
   with specific evidence and honest assessor notes. Use this skill whenever a job
   description or JD URL is shared alongside profile materials (resume, GitHub, cover
   letter, personal documents, online accounts), or when the user says things like
@@ -50,24 +50,24 @@ portfolio.md      ← project highlights
 ```
 
 Use `ls`, `find`, or `glob` to discover what's actually present. Don't assume
-specific filenames — read whatever exists that looks like professional background.
+specific filenames: read whatever exists that looks like professional background.
 If the directory contains a profile README (e.g. `username/username` on GitHub), that's
 the primary source.
 
 **Sibling repos.** If the scan root is a personal profile repo (directory basename
 matches the git user's handle, or it's a `username/username` GitHub-profile repo),
-also glob its **parent directory** one level up for sibling repos — a candidate's
+also glob its **parent directory** one level up for sibling repos: a candidate's
 sharpest evidence often lives one directory over, not in the profile repo itself.
-Classify each sibling by its `README.md` header only (cheap — don't full-scan):
+Classify each sibling by its `README.md` header only (cheap: don't full-scan):
 
 - **Portfolio/showcase repo** (README mentions "portfolio"/"projects", or it has a
   `src/data/*.ts|json` file listing project entries): read that structured data file
   directly instead of scraping rendered prose. It's usually the freshest, most
-  specific evidence — named platforms, architecture notes, live links — and should
+  specific evidence: named platforms, architecture notes, live links; and should
   outweigh an older CV bullet when the two disagree on depth for the same skill.
 - **Positioning/business-site repo** (a personal consultancy, agency, or product site
   whose README describes services/offerings): read the README and any `docs/`
-  positioning notes for how the candidate frames their own work — useful for
+  positioning notes for how the candidate frames their own work: useful for
   domain-fit judgment and for matching their stated target audience against the JD.
 - Anything else: skip it, don't full-scan unrelated repos.
 
@@ -95,7 +95,7 @@ If the user provides a LinkedIn, portfolio, or personal site URL, fetch it.
 **Brochure/aggregator repos.** If the candidate is part of a peer group, community,
 or agency that publishes a compiled profile on their behalf (a repo with per-person
 `sources/*.md` distilled profiles, or an `output/*.pdf` brochure), treat it as a third
-source of truth — it's distilled by someone else, so it surfaces framing and phrasing
+source of truth: it's distilled by someone else, so it surfaces framing and phrasing
 the candidate's own docs don't. It won't always sit in the sibling sweep from 1.1 (it
 may belong to a different organization entirely). If the sibling sweep didn't turn one
 up, ask the user whether one exists before finalizing scores.
@@ -155,7 +155,7 @@ Read `references/annotation-guide.md` for the full rubric and note-writing rules
 ### 3.1 Group into sections
 
 Regroup JD requirements into 6-8 coherent sections. Don't follow the JD's structure
-slavishly — regroup to make the fit story readable. Typical sections:
+slavishly: regroup to make the fit story readable. Typical sections:
 
 - Years & Seniority
 - Core Technical Skills
@@ -181,7 +181,7 @@ Hard requirements with no profile evidence = Gap, even if an equivalency clause 
 The clause is an opening to argue in the interview, not a free pass at the rating stage.
 
 Structural/logistical items (employment type, location, clearance, timezone) are binary.
-A concrete conflict is a Gap — rate it honestly and let the note explain what to resolve.
+A concrete conflict is a Gap: rate it honestly and let the note explain what to resolve.
 
 ### 3.3 Score
 
@@ -229,7 +229,7 @@ you can print to PDF?"
 
 **Redo requests.** When the user asks to remove a section or exclude certain facts
 (e.g. "don't mention current ongoing roles") on a redo, treat it as a standing
-instruction for the rest of the session, not a one-time edit to the section named —
+instruction for the rest of the session, not a one-time edit to the section named;
 re-check every other section for the same excluded facts before republishing.
 
 ---
@@ -238,7 +238,7 @@ re-check every other section for the same excluded facts before republishing.
 
 Read these on demand as each phase requires them:
 
-- `references/profile-extraction.md` — what to pull from each source type
-- `references/annotation-guide.md` — fit rating rubric and note-writing rules
-- `references/component-spec.md` — React component schema and rendering logic
-- `references/pdf-export.md` — print CSS and static HTML export instructions
+- `references/profile-extraction.md`: what to pull from each source type
+- `references/annotation-guide.md`: fit rating rubric and note-writing rules
+- `references/component-spec.md`: React component schema and rendering logic
+- `references/pdf-export.md`: print CSS and static HTML export instructions

@@ -54,7 +54,7 @@ Strategy: arrive with USD cash. Budget for cash-only everything.
 ### Revolut/Wise Colombia rules (2026)
 - Revolut Standard: £200/month fee-free (5 withdrawals), then 2%
 - Wise: 2 free withdrawals up to €200/month, then 2% + ~$1.50 fixed
-- Neither has partner network in Colombia — all ATMs are "out of network"
+- Neither has partner network in Colombia: all ATMs are "out of network"
 - Both still face the local bank surcharge on top of their own fees
 
 ---
@@ -80,7 +80,7 @@ in Isabela. Card acceptance is inconsistent even where machines exist.
 
 1. Find Coomeva or Caja Social first. Walk past everything else.
 2. Withdraw the maximum the ATM allows per transaction (usually 600k-2M COP).
-3. Check the screen before confirming — some banks (Davivienda) don't display
+3. Check the screen before confirming: some banks (Davivienda) don't display
    the fee until after.
 4. If the fee shown is over 20k COP, cancel and find a different ATM.
 5. Keep ATM receipts. Compare against app balance within 24h.

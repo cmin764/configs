@@ -14,7 +14,7 @@ bindkey "\e[F" end-of-line
 bindkey "\e[1;3D" backward-word    # Option+Left
 bindkey "\e[1;3C" forward-word     # Option+Right
 
-# Completions — full rebuild once a day, cached otherwise
+# Completions: full rebuild once a day, cached otherwise
 [[ -d "$HOME/.docker/completions" ]] && fpath=("$HOME/.docker/completions" $fpath)
 autoload -Uz compinit
 if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
@@ -38,10 +38,10 @@ if (( $+commands[brew] )); then
     unset _nvm_prefix
 fi
 
-# Claude Code — disable auto-update; run `claude update` manually to upgrade
+# Claude Code: disable auto-update; run `claude update` manually to upgrade
 export DISABLE_AUTOUPDATER=1
 
-# Claude Code — swap the whole config dir (and with it, the Keychain-backed
+# Claude Code: swap the whole config dir (and with it, the Keychain-backed
 # login) per ~/Work/<org> dir. Falls back to the default ~/.claude login when
 # no ~/.claude-<org> profile exists yet -- nothing to set up for personal
 # repos or orgs that don't need a separate account.

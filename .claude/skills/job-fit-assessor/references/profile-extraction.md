@@ -29,13 +29,13 @@ Don't assume filenames. Read whatever's present that resembles professional back
 
 ## Sibling / related repos
 
-The scan root often isn't the only repo holding candidate evidence — a personal
+The scan root often isn't the only repo holding candidate evidence: a personal
 profile repo (`username/username`) commonly sits alongside other repos in the same
 parent directory: a portfolio site, a consultancy/business site, a side project.
 Glob the parent directory one level up and read each sibling's `README.md` header
 (cheap classification pass, not a full scan):
 
-**Portfolio/showcase repo** — README mentions "portfolio" or "projects", or the repo
+**Portfolio/showcase repo**: README mentions "portfolio" or "projects", or the repo
 has a structured data file (`src/data/*.ts`, `*.json`) listing project entries. Read
 that file directly instead of scraping rendered prose. A real example schema:
 
@@ -49,17 +49,17 @@ that file directly instead of scraping rendered prose. A real example schema:
 }
 ```
 
-This is usually the freshest, most specific evidence available — named platforms,
-concrete architecture decisions, live deployed links — and should outweigh an older
+This is usually the freshest, most specific evidence available: named platforms,
+concrete architecture decisions, live deployed links: and should outweigh an older
 CV bullet when the two disagree on depth for the same skill. A CV that says a skill
 is "exposure only" can be flatly contradicted by three live, self-shipped projects
 in a portfolio repo; when that happens, believe the shipped work.
 
-**Positioning/business-site repo** — a personal consultancy, agency, or product site
+**Positioning/business-site repo**: a personal consultancy, agency, or product site
 whose README describes services or offerings ("Fractional AI Product Strategy",
 "Results as a Service", target industries, methodology). Read the README and any
 `docs/` positioning notes. This is how the candidate frames their own value
-proposition to strangers — useful for domain-fit judgment and for checking whether
+proposition to strangers: useful for domain-fit judgment and for checking whether
 their stated target audience actually overlaps with the JD's company/industry.
 
 Don't full-scan repos that don't match either pattern.
@@ -71,7 +71,7 @@ Don't full-scan repos that don't match either pattern.
 If the user attached files, they're at `/mnt/user-data/uploads/`. Read them directly.
 
 **PDF / DOCX resume**: extract timeline, titles, companies, durations, quantified
-achievements. A resume is structured but often sanitized — cross-reference with
+achievements. A resume is structured but often sanitized: cross-reference with
 other sources for the fuller story.
 
 **Cover letter**: read what the candidate emphasizes. The choice of emphasis reveals
@@ -106,7 +106,7 @@ choose to show strangers. First impression they're deliberately crafting.
 After reading everything, build a profile map across these dimensions:
 
 **Hard skills with depth**
-Map languages and tools to approximate years of real use — not just mention.
+Map languages and tools to approximate years of real use: not just mention.
 "18 years Python" is different from "comfortable with Python."
 For AI/ML: which platforms, which frameworks, what was shipped vs. experimented with.
 "Deployed a Recall.ai-based meeting agent" is signal. "Interested in LLMs" is noise.
@@ -122,7 +122,7 @@ regulated vs. unregulated, startup vs. enterprise. All of these affect transfera
 **Career arc**
 IC to lead to principal, or lateral moves? Trajectory tells you something about how
 the candidate develops. Acquisitions at previous employers are a proxy for system
-quality — those teams built something worth buying.
+quality: those teams built something worth buying.
 
 **Peer-validated achievements**
 Conference talks, open-source adoption, competition results, published work,
@@ -136,7 +136,7 @@ Omitting it only hurts the candidate when a gap surfaces in the interview unprep
 
 **When sources disagree**
 A prose CV/codex file and a structured project data file (see "Sibling / related
-repos" above) sometimes describe the same skill at different depths — the CV was
+repos" above) sometimes describe the same skill at different depths: the CV was
 written once and goes stale; a portfolio repo gets touched every time something ships.
 Prefer the structured, more current source when they conflict, and say so in the note
 so the candidate knows which framing to lead with in the interview.
@@ -152,5 +152,5 @@ A profile repo like `username/username` typically has a README that covers
 positioning and stack, and sometimes supporting files for career detail (`codex.md`)
 or a formal history (`cv.md`). If the README has an "About" or "Currently building"
 section, that's the most current signal. The codex-style file, if present, is usually
-the richest — it contains the career arc, project specifics, and strategic context
+the richest: it contains the career arc, project specifics, and strategic context
 that a resume strips out. Fetch both and triangulate.
