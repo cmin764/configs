@@ -284,6 +284,26 @@ grep -q 'docker container prune' /tmp/docker_l2.log && fail "level 2: container 
 grep -q 'docker image prune -a' /tmp/docker_l2.log && fail "level 2: image prune -a ran (should only prune dangling)" || ok "level 2: only dangling images pruned"
 rm -f /tmp/docker_l2.log
 
+echo "--- docker daemon not running: null, not a silent 0 ---"
+mkdir -p "$TMP/bin-down"
+cat > "$TMP/bin-down/docker" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  --version) echo "Docker version 0.0.0-shim" ;;
+  info) exit 1 ;;
+esac
+EOF
+chmod +x "$TMP/bin-down/docker"
+out=$(PATH="$TMP/bin-down:$TMP/bin:$PATH" python3 "$CLEANUP" --level 3 --json --only docker 2>&1)
+python3 - "$out" <<'PYEOF' && ok "docker daemon down: reclaimable null, not 0; total_reclaimable still sums" || fail "docker-down JSON check failed"
+import json, sys
+d = json.loads(sys.argv[1])
+t = d["targets"][0]
+assert t["reclaimable"] is None, t["reclaimable"]
+assert "not running" in t["note"].lower(), t["note"]
+assert d["total_reclaimable"] == 0
+PYEOF
+
 echo "--- --only with an unknown target fails fast ---"
 python3 "$CLEANUP" --only nope --level 3 >/dev/null 2>&1 && fail "unknown --only target accepted" || ok "unknown --only target refused"
 

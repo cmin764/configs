@@ -344,10 +344,19 @@ def _delete_old_files(path: Path, days: int, dry_run: bool) -> int:
 # Target implementations
 # ---------------------------------------------------------------------------
 
-def _measure_brew() -> int:
+def _measure_brew(level: int = 1) -> int:
+    """Mirrors _apply_brew's own --prune=all gate at level >= 3: measuring
+    without it undercounts what apply will actually remove (verified on
+    this machine: 150.6MB without --prune=all, 1.3GB with it), the same
+    dry-run-versus-apply mismatch already fixed elsewhere in this target
+    catalog for other targets.
+    """
     if not _has("brew"):
         return 0
-    result = _run(["brew", "cleanup", "-n", "-s"])
+    args = ["brew", "cleanup", "-n", "-s"]
+    if level >= 3:
+        args.append("--prune=all")
+    result = _run(args)
     total = 0
     for line in result.stdout.splitlines():
         if line.startswith("Would remove:"):
@@ -415,12 +424,21 @@ def _measure_docker(include_containers: bool = False, all_images: bool = False) 
     is real data, not cache.
     Level 3 turns on include_containers (adds 'container prune -f',
     confirm-gated) and/or all_images (adds tagged unused images).
+
+    Returns None (not 0) when the daemon isn't reachable, so a report row
+    can show reclaimable: null instead of reading as "nothing to reclaim"
+    when the real answer is "never actually measured" -- verified on this
+    machine, where the daemon being stopped silently reported 0 despite
+    15+ GiB of unused images once it was started.
     """
     if not _has("docker"):
-        return 0
+        return 0  # no docker at all is a real 0, unlike a stopped daemon
+    info = _run(["docker", "info"])
+    if info.returncode != 0:
+        return None
     result = _run(["docker", "system", "df", "--format", "{{.Type}}\t{{.Reclaimable}}"])
     if result.returncode != 0:
-        return 0
+        return None
     total = 0
     for line in result.stdout.splitlines():
         parts = line.split("\t", 1)
@@ -1229,12 +1247,13 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
     # --- Level 1: package-manager CLIs ---
 
     if active("brew", 1):
-        size = _measure_brew()
+        size = _measure_brew(level)
         freed = 0
         if not dry_run and size > 0:
             freed = _apply_brew(level)
+        note = "brew cleanup -s --prune=all" if level >= 3 else "brew cleanup -s"
         report.append({"target": "brew", "level": 1, "reclaimable": size, "freed": freed,
-                        "risk": "low", "note": "brew cleanup -s"})
+                        "risk": "low", "note": note})
 
     pip_bin = "pip" if _has("pip") else "pip3"
     cli_targets = [
@@ -1414,13 +1433,16 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
         include_containers = level >= 3
         size = _measure_docker(include_containers=include_containers, all_images=all_imgs)
         freed = 0
-        if not dry_run:
-            freed = _apply_docker(include_containers=include_containers, all_images=all_imgs,
-                                   include_dangerous=False, yes=args.yes)
-        if all_imgs:
-            note = "image prune -a -f + builder prune -f + container prune -f (no volumes)"
+        if size is None:
+            note = "Docker daemon not running, unmeasured -- start it and re-run"
         else:
-            note = "image prune -f + builder prune -f (dangling only, no volumes, containers untouched)"
+            if not dry_run and size > 0:
+                freed = _apply_docker(include_containers=include_containers, all_images=all_imgs,
+                                       include_dangerous=False, yes=args.yes)
+            if all_imgs:
+                note = "image prune -a -f + builder prune -f + container prune -f (no volumes)"
+            else:
+                note = "image prune -f + builder prune -f (dangling only, no volumes, containers untouched)"
         report.append({"target": "docker", "level": 2, "reclaimable": size, "freed": freed,
                         "risk": "med", "note": note})
 
@@ -1525,11 +1547,14 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
     if args.include_dangerous and active("docker-volumes", 3):
         size = _measure_docker(include_containers=True, all_images=True)
         freed = 0
-        if not dry_run:
+        note = "docker system prune -a --volumes: ALL images and volumes"
+        if size is None:
+            note = "Docker daemon not running, unmeasured -- start it and re-run"
+        elif not dry_run:
             freed = _apply_docker(include_containers=True, all_images=True,
                                    include_dangerous=True, yes=args.yes)
         report.append({"target": "docker-volumes", "level": 3, "reclaimable": size, "freed": freed,
-                        "risk": "HIGH", "note": "docker system prune -a --volumes: ALL images and volumes"})
+                        "risk": "HIGH", "note": note})
 
     return report
 

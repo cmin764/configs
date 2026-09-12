@@ -132,6 +132,13 @@ python3 scripts/cleanup.py --level 3 --work-dir ~/code --apply
 - A `du` failure on an existing path (e.g. `~/.Trash` blocked by macOS TCC
   for Terminal) is reported as `reclaimable: null` with a Full Disk Access
   note, never silently as "nothing to clean".
+- `docker` reports `reclaimable: null` when the daemon isn't running,
+  instead of the 0 a stopped daemon would otherwise produce (verified: a
+  stopped Docker Desktop silently read as nothing to reclaim despite 15+
+  GiB of unused images once it was started).
+- `brew`'s report measures with `--prune=all` at level 3, matching what
+  the apply step actually runs there; measuring without it understated
+  what level 3 removes by roughly 1 GiB on this machine.
 
 ---
 
