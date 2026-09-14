@@ -1,3 +1,10 @@
+# The following lines were added by Docker Desktop to add commands to your PATH.
+# Kept permanently (with $HOME instead of Docker's hardcoded path) so Docker
+# Desktop's own marker-detection sees this block and stops re-injecting a
+# duplicate on every launch.
+export PATH="$PATH:$HOME/.docker/bin"
+# End of Docker Desktop section.
+
 # Local binaries.
 # ~/.local/bin exported last so it wins over /usr/local/sbin on name clashes
 # (Homebrew's shellenv below still prepends ahead of both).
@@ -21,9 +28,6 @@ unset _java_prefix
 
 # Go
 export PATH="$PATH:$HOME/go/bin"
-
-# Docker Desktop CLI plugins
-export PATH="$PATH:$HOME/.docker/bin"
 
 # pyenv
 export PYENV_ROOT="$HOME/.pyenv"

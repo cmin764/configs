@@ -93,7 +93,9 @@ question that unblocks work), optimise for their ability to act, not for showing
   - Haiku, low effort: primitive tool calls, mechanical and well-specified edits, routine deterministic scripts.
   - Sonnet, low/medium effort: executing an agreed plan, coding tasks, straight codegen against a clear spec.
   - Opus, high/xhigh effort: architecting solutions, self-reviewing produced changes from multiple angles to surface issues the author's own view would miss.
-  - Fable, high effort: driving the initial planning, orchestration design for how the whole change gets executed. Reach for it sparingly, only for the genuine aha-moment calls that then steer the rest of the work.
+  - Fable, xhigh effort: driving the initial planning, orchestration design for how the whole change gets executed. Reach for it sparingly, only for the genuine aha-moment calls that then steer the rest of the work.
+- Teammates inherit the lead's effort level and ignore their own `effort:` field entirely; charter `effort:` only ever applies to a plain subagent, so set the lead's effort level before the first spawn of a run if it needs to differ from the default.
+- `CLAUDE_CODE_EFFORT_LEVEL` and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` should stay unset: either one overrides every definition's own `effort:`/`model:`.
 - Exploration and code-search sub-agents (Explore, general-purpose lookups) run on Sonnet at low/medium effort by default; only escalate to Opus when the sub-agent itself is making a design call, not just retrieving.
 
 ## Code Style & Design

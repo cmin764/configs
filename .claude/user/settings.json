@@ -1,7 +1,8 @@
 {
   "env": {
     "DISABLE_AUTOUPDATER": "1",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
   },
   "statusLine": {
     "type": "command",
@@ -97,6 +98,15 @@
     }
   },
   "effortLevel": "medium",
+  "model": "sonnet",
+  "subagentPromptCacheTtl": "1h",
+  "modelSettings": {
+    "claude-fable-5-1": { "effortLevel": "xhigh" },
+    "claude-fable-5": { "effortLevel": "xhigh" },
+    "claude-opus-5": { "effortLevel": "high" },
+    "claude-sonnet-5": { "effortLevel": "medium" },
+    "claude-haiku-4-5-20251001": { "effortLevel": "low" }
+  },
   "tui": "fullscreen",
   "autoDreamEnabled": true,
   "theme": "auto",
