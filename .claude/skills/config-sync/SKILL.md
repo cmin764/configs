@@ -56,10 +56,20 @@ not byte-for-byte. Pull drops the machine-specific `Dynamic Profile Filename`
 and `Is Dynamic Profile`, turns the home path into `$HOME`, and keeps the repo's
 key order and number formatting so the diff shows only real changes (new keys
 from iTerm2 releases, e.g. the Claude Code workgroup `Triggers`, flow through
-untouched). Push skips when the live profile differs from the repo: `--pull` to
-keep the live side, `--restore` to force the repo's onto the machine. The
-`Workgroups` blob and `NoSyncClaudeCode*` flags in the plist are iTerm2's own
-state and deliberately not tracked.
+untouched). Push and restore expand `$HOME` back to the real path, because
+iTerm2 does not expand it in dynamic profile values.
+
+Push uses git history to tell which side moved: a live profile equal to some
+committed version is a known older state, so the repo is ahead and push writes.
+A live profile matching nothing committed holds UI edits the repo never saw, so
+push refuses (`--pull` to keep them, `--restore` to overwrite them). Push
+rewrites the file under `DynamicProfiles/` in full and iTerm2 then shrinks it
+back to a stub; that is expected, since status and pull read the plist. The
+plist file can lag behind a just-changed UI setting, so quit iTerm2 before
+`--pull` if a fresh edit doesn't show up. If a future iTerm2 release keeps the
+file complete again, the plist extraction can go and a plain two-way copy is
+enough. The `Workgroups` blob and `NoSyncClaudeCode*` flags in the plist are
+iTerm2's own state and deliberately not tracked.
 
 Likewise the `cc-status` hooks iTerm2's integration injects into each profile's
 `settings.json` (`~/.config/iterm2/cc-status`, a symlink into the app bundle)

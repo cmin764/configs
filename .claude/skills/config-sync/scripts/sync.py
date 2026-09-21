@@ -237,6 +237,43 @@ def _selftest():
         uw, us = used_claude_mem_ports(home, exclude=home / ".claude-mem-self")
         assert uw == {"40000", str(CLAUDE_MEM_DEFAULT_WORKER_PORT)}, uw
         assert us == {"40200", str(CLAUDE_MEM_DEFAULT_SERVER_PORT)}, us
+    # iTerm2 profile sync: the comparison, merge and portability helpers.
+    assert _same(1, 1.0) and _same(0.062745101749897, 0.06274510174989698)
+    assert not _same(1, 2) and not _same(True, 1) and _same(True, True)
+    assert not _same({"a": 1}, {"a": 1, "b": 2}) and not _same([1], [1, 2])
+    assert _same({"a": [{"b": 1}]}, {"a": [{"b": 1.0}]})
+    repo = {"x": 1.0, "n": {"y": 2, "gone": 3}, "z": 4}
+    live = {"z": 4.0, "x": 1, "n": {"y": 5}, "new": {"k": [1]}}
+    kept = _keep_repo_form(repo, live)
+    assert kept == {"x": 1.0, "n": {"y": 5}, "z": 4, "new": {"k": [1]}}, kept
+    assert list(kept) == ["x", "n", "z", "new"], "repo key order not kept"
+    assert repr(kept["x"]) == "1.0" and repr(kept["z"]) == "4", kept
+    tree = {"a": f"{HOME}/x", "b": [f"cd {HOME}", 3], "c": {"d": "plain"}}
+    assert _portable(tree) == {"a": "$HOME/x", "b": ["cd $HOME", 3], "c": {"d": "plain"}}
+    assert _unportable(_portable(tree)) == tree
+    assert _json_safe({"a": [1, 2.5, True, None, "s"]}) == {"a": [1, 2.5, True, None, "s"]}
+    for bad in (b"blob", {"k": [b"blob"]}):
+        try:
+            _json_safe({"Some Key": bad})
+        except TypeError as e:
+            assert "Some Key" in str(e), e
+        else:
+            raise AssertionError("_json_safe let a non-JSON value through")
+    # push guard: repo ahead of a known committed live state pushes; live UI
+    # edits the repo never saw, or no history at all, do not.
+    v1, v2, edited = {"a": 1}, {"a": 2}, {"a": 9}
+    assert _push_decision([v2, v1], v2, v2) == "in sync"
+    assert _push_decision([v2, v1], v1, v2) == "push"      # repo moved on
+    assert _push_decision([v2, v1], edited, v2) == "skip"  # unpulled live edit
+    assert _push_decision([], v1, v2) == "skip"            # no history to judge
+    # The hook filter removes iTerm2's hook, never a sibling in its group.
+    it = {"type": "command", "command": f"{HOME}/{ITERM2_HOOK_MARKER}"}
+    mine = {"type": "command", "command": "/x/mine.sh"}
+    st = {"hooks": {"Stop": [{"hooks": [it]}], "Pre": [{"matcher": "B", "hooks": [it, mine]}],
+                    "Post": [{"hooks": [mine]}]}, "other": 1}
+    assert _without_iterm_hooks(st) == {"hooks": {
+        "Pre": [{"matcher": "B", "hooks": [mine]}], "Post": [{"hooks": [mine]}]}, "other": 1}
+    assert _without_iterm_hooks({"other": 1}) == {"other": 1}
     print("selftest ok")
 
 
@@ -342,23 +379,32 @@ def sync_trimmed(src_rel, dst_rel, drop_keys, mode):
         print(f"  pulled {dst_rel} -> {src_rel} (dropped {', '.join(sorted(drop_keys))})")
 
 
+# Marks the hook commands iTerm2's Claude Code integration installs.
+ITERM2_HOOK_MARKER = ".config/iterm2/cc-status"
+
+
 def _without_iterm_hooks(settings):
     """Live settings minus the hooks iTerm2's Claude Code integration installs.
 
     iTerm2 re-installs them itself (its cc-status helper lives inside the app
     bundle, reached via an absolute ~/.config path), so they don't belong in
-    the template and would otherwise show as permanent drift.
+    the template and would otherwise show as permanent drift. Filters single
+    hooks, not whole matcher groups: a group iTerm2 shares with one of the
+    user's own hooks keeps the user's hook, so real drift there still shows.
     """
     hooks = settings.get("hooks")
     if not hooks:
         return settings
     kept = {}
     for event, groups in hooks.items():
-        groups = [g for g in groups
-                  if not any(".config/iterm2/cc-status" in h.get("command", "")
-                             for h in g.get("hooks", []))]
-        if groups:
-            kept[event] = groups
+        survivors = []
+        for group in groups:
+            own = [h for h in group.get("hooks", [])
+                   if ITERM2_HOOK_MARKER not in h.get("command", "")]
+            if own or not group.get("hooks"):
+                survivors.append({**group, "hooks": own} if own else group)
+        if survivors:
+            kept[event] = survivors
     return {**settings, "hooks": kept}
 
 
@@ -418,30 +464,67 @@ def _portable(value):
     return value
 
 
+def _unportable(value):
+    """Inverse of _portable, applied on the way onto a machine: iTerm2 does
+    not expand $HOME in dynamic profile values, so a literal one would be
+    handed to chdir as is.
+
+    ponytail: a profile string that already held a literal $HOME on the
+    source machine comes back expanded, so the round trip is exact only for
+    values _portable produced. Add an escape if a profile ever needs a real
+    literal $HOME.
+    """
+    if isinstance(value, str):
+        return value.replace("$HOME", str(HOME))
+    if isinstance(value, list):
+        return [_unportable(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _unportable(v) for k, v in value.items()}
+    return value
+
+
+def _json_safe(value, path=""):
+    """value unchanged if plain JSON data, else TypeError naming where. A
+    plist <data> or <date> would otherwise be stringified into the repo copy
+    and fed back to iTerm2 as garbage."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _json_safe(v, f"{path}.{k}")
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            _json_safe(v, f"{path}[{i}]")
+    elif value is not None and not isinstance(value, (str, int, float, bool)):
+        raise TypeError(f"{path or 'profile'} is a {type(value).__name__}, which "
+                        "JSON can't carry; teach sync.py about it before pulling")
+    return value
+
+
 def _iterm2_live_profile():
-    """The Wandercode profile as iTerm2 holds it in its plist, made portable.
+    """(profile, reason): the Wandercode profile as iTerm2 holds it in its
+    plist, made portable; or (None, why there is nothing to export).
 
     The plist is the only complete copy: with Rewritable set, the file under
     DynamicProfiles/ shrinks to a stub, so it can't be the pull source.
     Denylist rather than allowlist, so keys future iTerm2 releases add flow
-    through without touching this script. Returns None (after saying why) when
-    there is nothing to export.
+    through without touching this script. Revisit if a release makes that
+    file complete again: a plain two-way copy would then be enough.
     """
     if not ITERM2_PLIST.exists():
-        print("  skip iterm2: no local iTerm2 preferences to export from")
-        return None
+        return None, "no local iTerm2 preferences to export from"
     with open(ITERM2_PLIST, "rb") as f:
         profiles = plistlib.load(f).get("New Bookmarks", [])
     profile = next((p for p in profiles if p.get("Name") == "Wandercode"), None)
     if profile is None:
-        print("  skip iterm2: no profile named 'Wandercode' in the local plist "
-              "-- rename your profile first, or this would overwrite the "
-              "template with the wrong one")
-        return None
+        return None, ("no profile named 'Wandercode' in the local plist -- "
+                      "rename your profile first, or this would overwrite the "
+                      "template with the wrong one")
     profile = _portable({k: v for k, v in profile.items()
                          if k not in ITERM2_MACHINE_KEYS})
     profile["Guid"] = ITERM2_PROFILE_GUID
-    return json.loads(json.dumps(profile, default=str))
+    try:
+        return _json_safe(profile), None
+    except TypeError as e:
+        return None, str(e)
 
 
 def _same(a, b):
@@ -477,45 +560,96 @@ def _iterm2_repo_profile():
     return json.loads(src.read_text())["Profiles"][0]
 
 
+def _iterm2_history(limit=50):
+    """Committed versions of the repo profile, newest first. Empty when git
+    or the history is unavailable (fresh download without .git, new file)."""
+    def git(*args):
+        return subprocess.run(["git", "-C", str(REPO_ROOT), *args],
+                              capture_output=True, text=True)
+    log = git("log", f"-n{limit}", "--format=%H", "--", ITERM2_DST_REL)
+    versions = []
+    for sha in log.stdout.split() if log.returncode == 0 else []:
+        shown = git("show", f"{sha}:{ITERM2_DST_REL}")
+        try:
+            versions.append(json.loads(shown.stdout)["Profiles"][0])
+        except (ValueError, KeyError, IndexError):
+            continue
+    return versions
+
+
+def _push_decision(history, live, repo):
+    """"in sync", "push" or "skip" for --push.
+
+    A two-way compare can't say which side moved. Git history can: a live
+    profile equal to some committed version is a known older state, so the
+    repo is ahead and pushing loses nothing. A live profile matching nothing
+    committed holds UI edits (Rewritable writes them) the repo never saw, and
+    a blind push would destroy them. No history means no way to tell: skip.
+    """
+    if _same(live, repo):
+        return "in sync"
+    return "push" if any(_same(live, v) for v in history) else "skip"
+
+
+def _iterm2_deploy(dst_rel):
+    """Write the repo profile onto the machine with $HOME expanded back."""
+    src = repo_path(ITERM2_DST_REL)
+    dst = home_path(dst_rel)
+    ensure_parent(dst)
+    dst.write_text(json.dumps(_unportable(json.loads(src.read_text())),
+                              indent=2) + "\n")
+    print(f"  wrote {dst_rel}")
+
+
 def sync_iterm2(mode):
     repo = _iterm2_repo_profile()
     if mode == "status":
+        live, why = _iterm2_live_profile()
         if not home_path(ITERM2_DST).exists():
-            print(f"[missing]      {ITERM2_DST_REL}")
+            print(f"[missing]      {ITERM2_DST}")
         elif repo is None:
             print(f"[missing src]  {ITERM2_DST_REL} (repo file gone)")
+        elif live is None:
+            print(f"[skip]         iterm2 profile ({why})")
         else:
-            live = _iterm2_live_profile()
-            if live is not None:
-                # Parsed compare, not bytes: the plist stores 1 where the repo
-                # has 1.0, and the live file is a stub.
-                state = "in sync" if _same(live, repo) else "differs"
-                print(f"[{state}]      iterm2 profile (live plist vs {ITERM2_DST_REL})")
-    elif mode == "pull":
-        live = _iterm2_live_profile()
+            # Parsed compare, not bytes: the plist stores 1 where the repo
+            # has 1.0, and the live file is a stub.
+            state = "in sync" if _same(live, repo) else "differs"
+            print(f"[{state}]      iterm2 profile (live plist vs {ITERM2_DST_REL})")
+        return
+    if mode == "pull":
+        live, why = _iterm2_live_profile()
         if live is None:
-            return
-        if _same(live, repo):
+            print(f"  skip iterm2: {why}")
+        elif repo is not None and _same(live, repo):
             print(f"  {ITERM2_DST_REL} matches the live profile, nothing to pull")
-            return
-        # Keep the repo's key order and number formatting for unchanged
-        # values, so the git diff shows only what really changed.
-        merged = _keep_repo_form(repo or {}, live)
-        out_path = repo_path(ITERM2_DST_REL)
-        ensure_parent(out_path)
-        out_path.write_text(json.dumps({"Profiles": [merged]}, indent=2) + "\n")
-        print(f"  pulled iTerm2 profile 'Wandercode' -> {ITERM2_DST_REL}")
-    elif mode == "push":
-        # iTerm2 rewrites the profile on UI edits (Rewritable), so a blind
-        # overwrite could destroy changes not yet pulled. --restore forces.
-        live = _iterm2_live_profile() if home_path(ITERM2_DST).exists() else repo
-        if live is not None and repo is not None and not _same(live, repo):
-            print(f"  skip {ITERM2_DST_REL}: live profile differs from the repo. "
-                  "--pull to keep the live side, --restore to force the repo's.")
-            return
-        sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
+        else:
+            # Keep the repo's key order and number formatting for unchanged
+            # values, so the git diff shows only what really changed.
+            out_path = repo_path(ITERM2_DST_REL)
+            ensure_parent(out_path)
+            out_path.write_text(json.dumps(
+                {"Profiles": [_keep_repo_form(repo or {}, live)]}, indent=2) + "\n")
+            print(f"  pulled iTerm2 profile 'Wandercode' -> {ITERM2_DST_REL}")
+        return
+    if repo is None:
+        print(f"  skip {ITERM2_DST_REL}: repo file gone")
     elif mode == "restore":
-        sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
+        _iterm2_deploy(ITERM2_DST)
+    elif mode == "push":
+        live, _ = _iterm2_live_profile()
+        if live is None or not home_path(ITERM2_DST).exists():
+            _iterm2_deploy(ITERM2_DST)  # nothing live to protect
+            return
+        decision = _push_decision(_iterm2_history(), live, repo)
+        if decision == "in sync":
+            print(f"  {ITERM2_DST_REL} matches the live profile, nothing to push")
+        elif decision == "push":
+            _iterm2_deploy(ITERM2_DST)
+        else:
+            print(f"  skip {ITERM2_DST_REL}: the live profile has changes the repo "
+                  "never saw (or there is no git history to tell). --pull to keep "
+                  "them, --restore to overwrite with the repo's.")
 
 
 def _defaults_read_int(domain, key):

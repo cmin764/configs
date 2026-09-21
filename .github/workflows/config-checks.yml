@@ -29,6 +29,9 @@ jobs:
       - name: config-sync selftest (deep_merge / diff_paths / claude-mem isolation logic)
         run: python3 .claude/skills/config-sync/scripts/sync.py --selftest
 
+      - name: iTerm2 profile sync end to end (throwaway HOME and git repo, synthetic plist)
+        run: bash .github/scripts/test_iterm2_sync.sh
+
       - name: claude-mem-pid-guard hook (shimmed security/curl, every leak state)
         run: bash .github/scripts/test_claude_mem_pid_guard.sh
 
