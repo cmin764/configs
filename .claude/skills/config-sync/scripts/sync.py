@@ -342,6 +342,26 @@ def sync_trimmed(src_rel, dst_rel, drop_keys, mode):
         print(f"  pulled {dst_rel} -> {src_rel} (dropped {', '.join(sorted(drop_keys))})")
 
 
+def _without_iterm_hooks(settings):
+    """Live settings minus the hooks iTerm2's Claude Code integration installs.
+
+    iTerm2 re-installs them itself (its cc-status helper lives inside the app
+    bundle, reached via an absolute ~/.config path), so they don't belong in
+    the template and would otherwise show as permanent drift.
+    """
+    hooks = settings.get("hooks")
+    if not hooks:
+        return settings
+    kept = {}
+    for event, groups in hooks.items():
+        groups = [g for g in groups
+                  if not any(".config/iterm2/cc-status" in h.get("command", "")
+                             for h in g.get("hooks", []))]
+        if groups:
+            kept[event] = groups
+    return {**settings, "hooks": kept}
+
+
 def sync_merge(src_rel, dst_rel, mode):
     src = repo_path(src_rel)
     dst = home_path(dst_rel)
@@ -350,7 +370,7 @@ def sync_merge(src_rel, dst_rel, mode):
         if not dst.exists():
             print(f"[missing]      {dst_rel}")
             return
-        live_json = json.loads(dst.read_text())
+        live_json = _without_iterm_hooks(json.loads(dst.read_text()))
         diffs = diff_paths(live_json, repo_json)
         if not diffs:
             print(f"[in sync]      {dst_rel}")
@@ -369,7 +389,7 @@ def sync_merge(src_rel, dst_rel, mode):
         if not dst.exists():
             print(f"  skip {src_rel}: nothing live to pull")
             return
-        live_json = json.loads(dst.read_text())
+        live_json = _without_iterm_hooks(json.loads(dst.read_text()))
         diffs = diff_paths(repo_json, live_json)
         if diffs:
             print(f"  NOT auto-pulled ({dst_rel} differs from the template):")

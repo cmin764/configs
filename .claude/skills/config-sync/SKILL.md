@@ -61,6 +61,11 @@ keep the live side, `--restore` to force the repo's onto the machine. The
 `Workgroups` blob and `NoSyncClaudeCode*` flags in the plist are iTerm2's own
 state and deliberately not tracked.
 
+Likewise the `cc-status` hooks iTerm2's integration injects into each profile's
+`settings.json` (`~/.config/iterm2/cc-status`, a symlink into the app bundle)
+are iTerm2-managed: status and pull ignore them, and the template doesn't carry
+them, since iTerm2 reinstalls them on a fresh machine.
+
 A second machine can already carry its own local-only dynamic profile under a
 different name, predating this skill -- if it happens to share the repo's
 hardcoded Guid (cloned by hand from an earlier machine), iTerm2 reports a
