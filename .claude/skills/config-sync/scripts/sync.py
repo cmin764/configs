@@ -23,6 +23,7 @@ import contextlib
 import getpass
 import io
 import json
+import math
 import os
 import plistlib
 import re
@@ -380,35 +381,120 @@ def sync_merge(src_rel, dst_rel, mode):
             print(f"  {dst_rel} matches the template, nothing to pull")
 
 
+# Keys iTerm2 writes into its own plist entry for a dynamic profile. They're
+# machine-specific (an absolute path) or re-set by iTerm2 on every load, so
+# carrying them into the repo only adds noise that fails the home-path CI check.
+ITERM2_MACHINE_KEYS = {"Dynamic Profile Filename", "Is Dynamic Profile"}
+
+
+def _portable(value):
+    """Replace the real home directory with $HOME in every nested string."""
+    if isinstance(value, str):
+        return value.replace(str(HOME), "$HOME")
+    if isinstance(value, list):
+        return [_portable(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _portable(v) for k, v in value.items()}
+    return value
+
+
+def _iterm2_live_profile():
+    """The Wandercode profile as iTerm2 holds it in its plist, made portable.
+
+    The plist is the only complete copy: with Rewritable set, the file under
+    DynamicProfiles/ shrinks to a stub, so it can't be the pull source.
+    Denylist rather than allowlist, so keys future iTerm2 releases add flow
+    through without touching this script. Returns None (after saying why) when
+    there is nothing to export.
+    """
+    if not ITERM2_PLIST.exists():
+        print("  skip iterm2: no local iTerm2 preferences to export from")
+        return None
+    with open(ITERM2_PLIST, "rb") as f:
+        profiles = plistlib.load(f).get("New Bookmarks", [])
+    profile = next((p for p in profiles if p.get("Name") == "Wandercode"), None)
+    if profile is None:
+        print("  skip iterm2: no profile named 'Wandercode' in the local plist "
+              "-- rename your profile first, or this would overwrite the "
+              "template with the wrong one")
+        return None
+    profile = _portable({k: v for k, v in profile.items()
+                         if k not in ITERM2_MACHINE_KEYS})
+    profile["Guid"] = ITERM2_PROFILE_GUID
+    return json.loads(json.dumps(profile, default=str))
+
+
+def _same(a, b):
+    """Equality that shrugs off float re-serialization (0.0627451017499 vs
+    0.06274510174989698) and int-vs-float, which iTerm2 flips on its own."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a is b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-12)
+    return a == b
+
+
+def _keep_repo_form(repo, live):
+    """live's content, spelled like repo wherever the two are equivalent, so
+    the git diff shows only real changes (key order and number format)."""
+    if _same(repo, live):
+        return repo
+    if isinstance(repo, dict) and isinstance(live, dict):
+        out = {k: _keep_repo_form(repo[k], live[k]) for k in repo if k in live}
+        out.update({k: v for k, v in live.items() if k not in out})
+        return out
+    return live
+
+
+def _iterm2_repo_profile():
+    src = repo_path(ITERM2_DST_REL)
+    if not src.exists():
+        return None
+    return json.loads(src.read_text())["Profiles"][0]
+
+
 def sync_iterm2(mode):
+    repo = _iterm2_repo_profile()
     if mode == "status":
-        sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
-        return
-    if mode == "pull":
-        if not ITERM2_PLIST.exists():
-            print("  skip iterm2: no local iTerm2 preferences to export from")
+        if not home_path(ITERM2_DST).exists():
+            print(f"[missing]      {ITERM2_DST_REL}")
+        elif repo is None:
+            print(f"[missing src]  {ITERM2_DST_REL} (repo file gone)")
+        else:
+            live = _iterm2_live_profile()
+            if live is not None:
+                # Parsed compare, not bytes: the plist stores 1 where the repo
+                # has 1.0, and the live file is a stub.
+                state = "in sync" if _same(live, repo) else "differs"
+                print(f"[{state}]      iterm2 profile (live plist vs {ITERM2_DST_REL})")
+    elif mode == "pull":
+        live = _iterm2_live_profile()
+        if live is None:
             return
-        with open(ITERM2_PLIST, "rb") as f:
-            d = plistlib.load(f)
-        profiles = d.get("New Bookmarks", [])
-        if not profiles:
-            print("  skip iterm2: no profiles in the local plist")
+        if _same(live, repo):
+            print(f"  {ITERM2_DST_REL} matches the live profile, nothing to pull")
             return
-        profile = next((p for p in profiles if p.get("Name") == "Wandercode"), None)
-        if profile is None:
-            print("  skip iterm2: no profile named 'Wandercode' in the local plist "
-                  "-- rename your profile first, or this would overwrite the "
-                  "template with the wrong one")
-            return
-        profile = dict(profile)
-        profile["Guid"] = ITERM2_PROFILE_GUID
-        if profile.get("Working Directory", "").startswith(str(HOME)):
-            profile["Working Directory"] = "$HOME"
+        # Keep the repo's key order and number formatting for unchanged
+        # values, so the git diff shows only what really changed.
+        merged = _keep_repo_form(repo or {}, live)
         out_path = repo_path(ITERM2_DST_REL)
         ensure_parent(out_path)
-        out_path.write_text(json.dumps({"Profiles": [profile]}, indent=2, default=str))
-        print(f"  pulled iTerm2 profile '{profile.get('Name')}' -> {ITERM2_DST_REL}")
-    elif mode in ("restore", "push"):
+        out_path.write_text(json.dumps({"Profiles": [merged]}, indent=2) + "\n")
+        print(f"  pulled iTerm2 profile 'Wandercode' -> {ITERM2_DST_REL}")
+    elif mode == "push":
+        # iTerm2 rewrites the profile on UI edits (Rewritable), so a blind
+        # overwrite could destroy changes not yet pulled. --restore forces.
+        live = _iterm2_live_profile() if home_path(ITERM2_DST).exists() else repo
+        if live is not None and repo is not None and not _same(live, repo):
+            print(f"  skip {ITERM2_DST_REL}: live profile differs from the repo. "
+                  "--pull to keep the live side, --restore to force the repo's.")
+            return
+        sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
+    elif mode == "restore":
         sync_copy(ITERM2_DST_REL, ITERM2_DST, mode)
 
 

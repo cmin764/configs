@@ -49,6 +49,18 @@ that's a binary plist with ~1300 keys of Sparkle-updater and window-position
 junk mixed in. Pull re-exports just the one profile; push drops the extracted
 JSON into `DynamicProfiles/`, which iTerm2 picks up live, no restart needed.
 
+The profile is `Rewritable`, so iTerm2 writes UI edits back and shrinks the
+file under `DynamicProfiles/` to a stub: the plist is the only complete copy,
+so status and pull compare against it semantically (float/int noise ignored),
+not byte-for-byte. Pull drops the machine-specific `Dynamic Profile Filename`
+and `Is Dynamic Profile`, turns the home path into `$HOME`, and keeps the repo's
+key order and number formatting so the diff shows only real changes (new keys
+from iTerm2 releases, e.g. the Claude Code workgroup `Triggers`, flow through
+untouched). Push skips when the live profile differs from the repo: `--pull` to
+keep the live side, `--restore` to force the repo's onto the machine. The
+`Workgroups` blob and `NoSyncClaudeCode*` flags in the plist are iTerm2's own
+state and deliberately not tracked.
+
 A second machine can already carry its own local-only dynamic profile under a
 different name, predating this skill -- if it happens to share the repo's
 hardcoded Guid (cloned by hand from an earlier machine), iTerm2 reports a

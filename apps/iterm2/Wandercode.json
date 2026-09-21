@@ -542,7 +542,35 @@
         "Green Component": "0",
         "Red Component": "0",
         "Blue Component": "0"
-      }
+      },
+      "Triggers": [
+        {
+          "action": "iTermEnterWorkgroupTrigger",
+          "matchType": 113,
+          "parameter": "builtin.claudeCode",
+          "partial": false,
+          "eventParams": {
+            "jobName": "claude"
+          },
+          "contentregex": "",
+          "regex": "",
+          "disabled": false
+        },
+        {
+          "action": "iTermExitWorkgroupTrigger",
+          "matchType": 114,
+          "parameter": "",
+          "partial": false,
+          "eventParams": {
+            "jobName": "claude",
+            "leaderOnly": true
+          },
+          "contentregex": "",
+          "regex": "",
+          "disabled": false
+        }
+      ],
+      "Rewritable": true
     }
   ]
 }
