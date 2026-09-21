@@ -49,6 +49,33 @@ that's a binary plist with ~1300 keys of Sparkle-updater and window-position
 junk mixed in. Pull re-exports just the one profile; push drops the extracted
 JSON into `DynamicProfiles/`, which iTerm2 picks up live, no restart needed.
 
+The profile is `Rewritable`, so iTerm2 writes UI edits back and shrinks the
+file under `DynamicProfiles/` to a stub: the plist is the only complete copy,
+so status and pull compare against it semantically (float/int noise ignored),
+not byte-for-byte. Pull drops the machine-specific `Dynamic Profile Filename`
+and `Is Dynamic Profile`, turns the home path into `$HOME`, and keeps the repo's
+key order and number formatting so the diff shows only real changes (new keys
+from iTerm2 releases, e.g. the Claude Code workgroup `Triggers`, flow through
+untouched). Push and restore expand `$HOME` back to the real path, because
+iTerm2 does not expand it in dynamic profile values.
+
+Push uses git history to tell which side moved: a live profile equal to some
+committed version is a known older state, so the repo is ahead and push writes.
+A live profile matching nothing committed holds UI edits the repo never saw, so
+push refuses (`--pull` to keep them, `--restore` to overwrite them). Push
+rewrites the file under `DynamicProfiles/` in full and iTerm2 then shrinks it
+back to a stub; that is expected, since status and pull read the plist. The
+plist file can lag behind a just-changed UI setting, so quit iTerm2 before
+`--pull` if a fresh edit doesn't show up. If a future iTerm2 release keeps the
+file complete again, the plist extraction can go and a plain two-way copy is
+enough. The `Workgroups` blob and `NoSyncClaudeCode*` flags in the plist are
+iTerm2's own state and deliberately not tracked.
+
+Likewise the `cc-status` hooks iTerm2's integration injects into each profile's
+`settings.json` (`~/.config/iterm2/cc-status`, a symlink into the app bundle)
+are iTerm2-managed: status and pull ignore them, and the template doesn't carry
+them, since iTerm2 reinstalls them on a fresh machine.
+
 A second machine can already carry its own local-only dynamic profile under a
 different name, predating this skill -- if it happens to share the repo's
 hardcoded Guid (cloned by hand from an earlier machine), iTerm2 reports a
