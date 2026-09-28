@@ -370,7 +370,7 @@ from "everything else in the repo gets installed."
       parent's env directly and never runs `.zshrc`, so with nothing here it
       silently defaults to the personal profile: default worker, default
       data dir, default keychain billing. Confirmed live 2026-08-31: an
-      adversarial-review subagent launched from an RPM-Avalon session landed
+      adversarial-review subagent launched from a client session landed
       its observations in the *personal* claude-mem db under a bogus
       `<version>`-named project (project-name resolution falls back to the
       plugin's own version string when it can't derive one from cwd
