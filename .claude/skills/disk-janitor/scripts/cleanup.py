@@ -534,7 +534,7 @@ def _apply_docker(
         return 0
     result = _run(["docker", "info"])
     if result.returncode != 0:
-        print("  [SKIP] Docker daemon not running")
+        print("  [SKIP] Docker daemon not running", file=sys.stderr)
         return 0
     before = _measure_docker(
         include_containers=include_containers or include_dangerous,
@@ -1558,6 +1558,8 @@ def build_report(
         note = " ".join(cli)
         if name == "uv" and _cache_lock_held(path):
             # claude-mem's chroma-mcp (via uvx) holds this for a whole session.
+            # Nothing is reclaimable while it runs, so the total must not count it.
+            size = 0
             note = "skipped: uv cache locked by a running uv process, quit Claude Code sessions"
         elif not dry_run and size > 0:
             freed = _apply_cli(cli, path)
