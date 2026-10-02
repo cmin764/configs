@@ -443,6 +443,12 @@ from "everything else in the repo gets installed."
      verifiable option when the client has a Console org and wants memory
      generation on its own invoice.
 
+   Run `--new-profile` in a real terminal tab, not through Claude Code's
+   shell (`!` or background): `setup-token` and the hidden paste need a TTY,
+   and there the step now stops with a message instead of hanging. Already
+   have a token? Copy it and write the file directly, then re-run:
+   `umask 077; printf 'ANTHROPIC_AUTH_TOKEN=%s\n' "$(pbpaste)" > ~/.claude-mem-<org>/.env`
+
    `--new-profile` writes the file (mode 600) from the token you paste
    after its `claude setup-token` run; to use a Console key instead, put
    `ANTHROPIC_API_KEY=...` there by hand before running it and the step
