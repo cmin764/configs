@@ -109,7 +109,10 @@ python3 scripts/cleanup.py --level 3 --work-dir ~/code --apply
 - Plugin version pruning skips a version dir while a live process holds a
   `.in_use/<pid>` marker in it (a `claude bg-spare` daemon can pin an old
   version for days), and skips a dir newer than the manifest only if it is
-  under an hour old (an install in progress), not forever.
+  under an hour old (an install in progress), not forever. Quitting sessions
+  does not release a marker: idle spares outlive them. If an old dir stays
+  and the report says nothing, read `.in_use/<pid>` in it, check `ps -p <pid>`,
+  stop that process, then re-run.
 - Unknown `--only`/`--skip` names fail fast with the list of valid targets.
 - Claude Code profiles (`~/.claude` plus any `~/.claude-*` `CLAUDE_CONFIG_DIR`
   profile) are auto-discovered by globbing: no profile list to keep in sync.
