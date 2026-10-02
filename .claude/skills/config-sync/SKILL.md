@@ -293,6 +293,12 @@ from "everything else in the repo gets installed."
    it's checking for the bare `@RTK.md` line its own installer would have
    added, not this repo's `@~/.claude/RTK.md` form; that mismatch is
    expected here and not a problem.
+   **After every `brew upgrade rtk`**, align the config with it: run
+   `rtk --version` and `rtk init --show`, skim the release notes
+   (`gh api repos/rtk-ai/rtk/releases`) for `hook:`, `init:` and awareness
+   changes, and check that every command `RTK.md` names still answers
+   `rtk <cmd> --help`. Keep version numbers out of `RTK.md`: a pinned
+   version in a prompt is stale by the next upgrade.
 5. **Fill in secrets**: create `~/.zprofile.local` (`chmod 600`) with the six
    keys named in `.zprofile`'s comments (`GITHUB_TOKEN`, `OPENAI_API_KEY`,
    `GEMINI_API_KEY`, `GOOGLE_MAPS_API_KEY`, `TALLY_API_KEY`, `CAL_API_KEY`).
@@ -648,7 +654,7 @@ Originally bootstrapped on an Intel Mac (`/usr/local` brew prefix); validated
 end-to-end on Apple Silicon (`/opt/homebrew` prefix) during the Wandercode
 restore. `.zprofile` handles both prefixes, and `brew install rtk` in
 particular now bottles cleanly on Apple Silicon (seconds) where it used to
-fall back to a 30+ minute source build on the Intel machine -- see `RTK.md`.
+fall back to a 30+ minute source build on the Intel machine.
 If something still assumes `/usr/local` unconditionally, that's a bug --
 grep the repo for the literal string and fix it rather than adding a third
 special case.
