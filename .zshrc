@@ -1,5 +1,14 @@
 # Aliases
-alias brew-all="brew update && brew upgrade && brew cleanup && brew doctor"
+# A function rather than an alias so it can self-heal: Claude Code's PreToolUse
+# hook shells out to a bare `rtk`, and one keg vanished mid-run once (cause
+# never found). Reinstalling afterward costs seconds and keeps the hook live.
+# Exit status is the chain's own, so `brew doctor` warnings still surface.
+brew-all() {
+    brew update && brew upgrade && brew cleanup && brew doctor
+    local rc=$?
+    command -v rtk >/dev/null || brew install rtk
+    return $rc
+}
 
 # Line editing: Fn+Left/Right (Home/End) and Option+Left/Right (word jump).
 # zsh's emacs keymap doesn't bind these out of the box -- iTerm2 sends the

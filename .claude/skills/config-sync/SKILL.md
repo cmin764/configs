@@ -297,7 +297,10 @@ from "everything else in the repo gets installed."
    `rtk --version` and `rtk init --show`, skim the release notes
    (`gh api repos/rtk-ai/rtk/releases`) for `hook:`, `init:` and awareness
    changes, and check that every command `RTK.md` names still answers
-   `rtk <cmd> --help`. Keep version numbers out of `RTK.md`: a pinned
+   `rtk <cmd> --help`. every line of `which -a rtk` must be `/opt/homebrew/bin/rtk` (a repeat
+   just means a duplicate PATH entry):
+   `~/.local/bin` precedes Homebrew on PATH, so a stray curl-installed copy
+   there would silently shadow the brew one. Keep version numbers out of `RTK.md`: a pinned
    version in a prompt is stale by the next upgrade.
 5. **Fill in secrets**: create `~/.zprofile.local` (`chmod 600`) with the six
    keys named in `.zprofile`'s comments (`GITHUB_TOKEN`, `OPENAI_API_KEY`,
