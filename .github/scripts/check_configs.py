@@ -10,6 +10,7 @@ out of CI is deliberate, not an oversight.
 
 Exit code is 1 if there are any findings, 0 if clean, so CI fails loudly.
 """
+
 import json
 import re
 import subprocess
@@ -29,8 +30,10 @@ SECRET_PATTERNS = [
     (r"tly-[A-Za-z0-9]{10,}", "Tally API key"),
     (r"cal_(live|test)_[A-Za-z0-9]{10,}", "Cal.com API key"),
     (r"-----BEGIN (RSA |EC |OPENSSH |)PRIVATE KEY-----", "private key"),
-    (r"""(?i)(api[_-]?key|secret|password|access[_-]?token)\s*[:=]\s*["'][A-Za-z0-9_\-/+]{16,}["']""",
-     "inline credential-shaped assignment"),
+    (
+        r"""(?i)(api[_-]?key|secret|password|access[_-]?token)\s*[:=]\s*["'][A-Za-z0-9_\-/+]{16,}["']""",
+        "inline credential-shaped assignment",
+    ),
 ]
 
 JUNK_NAMES = re.compile(
@@ -46,7 +49,9 @@ def is_shell_file(path):
 
 
 def is_reference_asset(rel):
-    return "reference/" in rel  # curated binary assets belong here (exempts check_binary only)
+    return (
+        "reference/" in rel
+    )  # curated binary assets belong here (exempts check_binary only)
 
 
 def tracked_files():
@@ -55,7 +60,11 @@ def tracked_files():
     # this to be run by hand ahead of a commit, not just by CI post-checkout.
     out = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=True)
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     return [REPO_ROOT / p for p in out.stdout.splitlines() if p]
 
 
@@ -76,7 +85,9 @@ def check_secrets(files, findings):
         for pattern, label in SECRET_PATTERNS:
             for m in re.finditer(pattern, text):
                 line = text.count("\n", 0, m.start()) + 1
-                findings.append(f"{path.relative_to(REPO_ROOT)}:{line}: possible {label}")
+                findings.append(
+                    f"{path.relative_to(REPO_ROOT)}:{line}: possible {label}"
+                )
 
 
 def strip_jsonc(text):
@@ -161,10 +172,14 @@ def check_shell_syntax(files, findings):
         # .zprofile/.zshrc are zsh dotfiles, not bash -- zsh has syntax
         # (e.g. glob qualifiers) that bash -n rejects as invalid.
         shell = "zsh" if path.name in SHELL_FILENAMES else "bash"
-        result = subprocess.run([shell, "-n", str(path)], capture_output=True, text=True)
+        result = subprocess.run(
+            [shell, "-n", str(path)], capture_output=True, text=True
+        )
         if result.returncode != 0:
-            findings.append(f"{path.relative_to(REPO_ROOT)}: shell syntax error: "
-                             f"{result.stderr.strip()}")
+            findings.append(
+                f"{path.relative_to(REPO_ROOT)}: shell syntax error: "
+                f"{result.stderr.strip()}"
+            )
 
 
 def check_binary(files, findings):
@@ -186,8 +201,10 @@ def check_machine_paths(files, findings):
             continue
         for m in home_pattern.finditer(text):
             line = text.count("\n", 0, m.start()) + 1
-            findings.append(f"{path.relative_to(REPO_ROOT)}:{line}: hardcoded "
-                             f"absolute home path ({m.group()}), use ~ or $HOME instead")
+            findings.append(
+                f"{path.relative_to(REPO_ROOT)}:{line}: hardcoded "
+                f"absolute home path ({m.group()}), use ~ or $HOME instead"
+            )
 
 
 def check_single_arch_brew(files, findings):
@@ -200,8 +217,10 @@ def check_single_arch_brew(files, findings):
         has_arm = "/opt/homebrew" in text
         has_intel = "/usr/local/bin/brew" in text or "/usr/local/Homebrew" in text
         if has_arm and not has_intel:
-            findings.append(f"{path.relative_to(REPO_ROOT)}: references /opt/homebrew "
-                             f"(Apple Silicon) with no Intel (/usr/local) fallback")
+            findings.append(
+                f"{path.relative_to(REPO_ROOT)}: references /opt/homebrew "
+                f"(Apple Silicon) with no Intel (/usr/local) fallback"
+            )
 
 
 def check_em_dashes(files, findings):
@@ -218,8 +237,10 @@ def check_em_dashes(files, findings):
             continue
         for i, line in enumerate(text.split("\n"), start=1):
             if em_dash in line:
-                findings.append(f"{path.relative_to(REPO_ROOT)}:{i}: em dash (U+2014), "
-                                 f"use a comma, colon, period, or parentheses instead")
+                findings.append(
+                    f"{path.relative_to(REPO_ROOT)}:{i}: em dash (U+2014), "
+                    f"use a comma, colon, period, or parentheses instead"
+                )
 
 
 def check_junk(files, findings):
@@ -231,8 +252,10 @@ def check_junk(files, findings):
     for path in files:
         rel = path.relative_to(REPO_ROOT).as_posix()
         if JUNK_NAMES.search(rel):
-            findings.append(f"{rel}: looks like an accumulated/generated file, not "
-                             f"hand-edited config")
+            findings.append(
+                f"{rel}: looks like an accumulated/generated file, not "
+                f"hand-edited config"
+            )
 
 
 def _selftest():
@@ -242,14 +265,19 @@ def _selftest():
     # a string value ending in ",}" must survive -- not be mistaken for a
     # trailing comma before the object's closing brace
     tricky = '{"a": "value,}", "b": 1,}'
-    assert json.loads(strip_jsonc(tricky)) == {"a": "value,}", "b": 1}, strip_jsonc(tricky)
+    assert json.loads(strip_jsonc(tricky)) == {"a": "value,}", "b": 1}, strip_jsonc(
+        tricky
+    )
     # a trailing comma followed by a comment, then the closing bracket, must
     # still be recognized as trailing (not just comma-then-whitespace)
     commented_trailing = '{"a": 1, // trailing\n}'
-    assert json.loads(strip_jsonc(commented_trailing)) == {"a": 1}, strip_jsonc(commented_trailing)
+    assert json.loads(strip_jsonc(commented_trailing)) == {"a": 1}, strip_jsonc(
+        commented_trailing
+    )
 
     # check_em_dashes: an em dash must be flagged; a hyphen or en dash must not.
     import tempfile
+
     global REPO_ROOT
     original_root = REPO_ROOT
     with tempfile.TemporaryDirectory() as tmp:

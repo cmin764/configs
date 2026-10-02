@@ -4,7 +4,13 @@ target-version = "py39"
 extend-exclude = ["apps", "reference"]
 
 [lint]
-# Errors, pyflakes, warnings, bugbear, import order, pyupgrade. Line length is
-# left to the author: the scripts favor long readable lines over wrapping.
-select = ["E", "F", "W", "B", "I", "UP"]
-ignore = ["E501"]
+# Errors, pyflakes, warnings, bugbear, import order, pyupgrade, simplify, ruff
+# extras, pylint warnings. Line length is left to the author.
+select = ["E", "F", "W", "B", "I", "UP", "SIM", "RUF", "PLW"]
+ignore = [
+  "E501",
+  "PLW1510",  # subprocess.run without check: callers read returncode on purpose
+  "PLW0603",  # global: selftests swap module constants to exercise failure paths
+  "RUF001",   # unicode in strings is intentional
+  "RUF013",  # implicit Optional: py39 floor, no X | None without future import
+]
