@@ -214,7 +214,9 @@ def _selftest():
     for _ in range(10):
         w_, s_ = allocate_claude_mem_ports(used_w, used_s, free)
         assert w_ not in seen and s_ not in seen, (w_, s_, seen)
-        seen.update({w_, s_}); used_w.add(w_); used_s.add(s_)
+        seen.update({w_, s_})
+        used_w.add(w_)
+        used_s.add(s_)
     w, srv = str(d + 1), str(d + 1 + off)
     s = isolated_claude_mem_settings(
         {"CLAUDE_MEM_MODEL": "m", "CLAUDE_MEM_WORKER_PORT": str(CLAUDE_MEM_DEFAULT_WORKER_PORT)},

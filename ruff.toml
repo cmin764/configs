@@ -1,0 +1,10 @@
+# Lint gate for the repo's Python (skill scripts + CI helpers). Py3.9 is the
+# floor because a fresh Mac only has the Command Line Tools python.
+target-version = "py39"
+extend-exclude = ["apps", "reference"]
+
+[lint]
+# Errors, pyflakes, warnings, bugbear, import order, pyupgrade. Line length is
+# left to the author: the scripts favor long readable lines over wrapping.
+select = ["E", "F", "W", "B", "I", "UP"]
+ignore = ["E501"]

@@ -409,22 +409,18 @@ def _cache_lock_held(path: Path) -> bool:
     return False
 
 
-def _apply_cli(cli: list[str], path: Path) -> int:
+def _apply_cli(cli: list[str], path: Path, timeout: int = _CLI_TIMEOUT_S) -> int:
     binary = cli[0]
     if not _has(binary):
-        return 0
-    if binary == "uv" and _cache_lock_held(path):
-        print("  [SKIP] uv cache is locked by a running uv process (claude-mem's "
-              "chroma-mcp?). Quit Claude Code sessions and retry.", file=sys.stderr)
         return 0
     before = _du(path)
     # Run from HOME so CLIs that require a project context (e.g. bun) don't fail.
     try:
         subprocess.run(cli, capture_output=True, text=True, cwd=str(HOME),
-                       timeout=_CLI_TIMEOUT_S)
+                       timeout=timeout)
     except subprocess.TimeoutExpired:
-        print(f"  [SKIP] {' '.join(cli)} timed out after {_CLI_TIMEOUT_S}s", file=sys.stderr)
-        return 0
+        # Keep the real delta: the CLI may have freed space before it stalled.
+        print(f"  [SKIP] {' '.join(cli)} timed out after {timeout}s", file=sys.stderr)
     after = _du(path)
     return max(0, before - after)
 
@@ -446,7 +442,7 @@ def _parse_docker_size(value: str) -> int:
     return 0
 
 
-def _measure_docker(include_containers: bool = False, all_images: bool = False) -> int:
+def _measure_docker(include_containers: bool = False, all_images: bool = False) -> int | None:
     """Measure reclaimable docker space for exactly what the matching apply
     call will prune.
 
@@ -502,7 +498,8 @@ def _measure_docker(include_containers: bool = False, all_images: bool = False) 
     return total
 
 
-def _apply_docker(include_containers: bool, all_images: bool, include_dangerous: bool, yes: bool) -> int:
+def _apply_docker(include_containers: bool, all_images: bool, include_dangerous: bool,
+                  yes: bool) -> int | None:
     if not _has("docker"):
         return 0
     result = _run(["docker", "info"])
@@ -534,7 +531,7 @@ def _apply_docker(include_containers: bool, all_images: bool, include_dangerous:
         # briefly unreachable, so the freed amount is unknown, not an error.
         print("  [NOTE] Docker daemon unreachable after prune, freed space not measured",
               file=sys.stderr)
-        return 0
+        return None
     return max(0, before - after)
 
 
@@ -869,6 +866,36 @@ def _load_plugin_manifest_paths(profile: Path) -> set[Path]:
     return paths
 
 
+# An install in progress is minutes old; a version dir that merely got touched
+# next to the manifest write days ago must not be protected forever.
+_FRESH_INSTALL_S = 3600
+
+
+def _in_use_by_live_process(version_dir: Path) -> bool:
+    """Whether a `.in_use/<pid>` marker in the version dir names a live process.
+
+    Claude Code drops one per process running out of that install (a
+    `claude bg-spare` daemon can keep an old version pinned for days), so a
+    live pid means the dir is still executing. Unreadable markers count as in
+    use: unknown state is never a delete candidate.
+    """
+    marker_dir = version_dir / ".in_use"
+    if not marker_dir.is_dir():
+        return False
+    for marker in marker_dir.iterdir():
+        try:
+            pid = int(json.loads(marker.read_text())["pid"])
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            return True  # exists, owned by someone else
+        except (OSError, ValueError, KeyError, TypeError):
+            return True
+        return True
+    return False
+
+
 def _find_plugin_old_versions(profiles: list[Path]) -> list[Path]:
     """Version dirs under <profile>/plugins/cache/<vendor>/<plugin>/<version>/
     that installed_plugins.json does not point at, for a plugin that has at
@@ -910,9 +937,12 @@ def _find_plugin_old_versions(profiles: list[Path]) -> list[Path]:
                     # be the incoming active install with its manifest
                     # entry not landed yet. Skip it rather than risk
                     # deleting the install about to become active.
+                    if _in_use_by_live_process(v):
+                        continue
                     if manifest_mtime is not None:
                         try:
-                            if v.stat().st_mtime > manifest_mtime:
+                            mtime = v.stat().st_mtime
+                            if mtime > manifest_mtime and time.time() - mtime < _FRESH_INSTALL_S:
                                 continue
                         except OSError:
                             pass
@@ -1229,16 +1259,38 @@ def _selftest() -> None:
 
     # _apply_cli: a CLI that outlives the timeout is killed and counted as
     # 0 freed instead of hanging the run.
-    global _CLI_TIMEOUT_S
-    saved_timeout = _CLI_TIMEOUT_S
-    _CLI_TIMEOUT_S = 1
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            started = time.time()
-            assert _apply_cli(["sleep", "30"], Path(tmp)) == 0
-            assert time.time() - started < 10, "_apply_cli ignored its timeout"
-    finally:
-        _CLI_TIMEOUT_S = saved_timeout
+    with tempfile.TemporaryDirectory() as tmp:
+        started = time.time()
+        assert _apply_cli(["sleep", "30"], Path(tmp), timeout=1) == 0
+        assert time.time() - started < 10, "_apply_cli ignored its timeout"
+
+    # _in_use_by_live_process / _find_plugin_old_versions: a live pid pins an
+    # old version dir, a dead one does not, and a dir merely touched near the
+    # manifest write long ago is no longer treated as an install in progress.
+    with tempfile.TemporaryDirectory() as tmp:
+        prof = Path(tmp)
+        base = prof / "plugins" / "cache" / "v" / "p"
+        for ver in ("1.0", "2.0", "3.0", "4.0"):
+            (base / ver).mkdir(parents=True)
+        (prof / "plugins" / "installed_plugins.json").write_text(json.dumps(
+            {"plugins": {"p@v": [{"installPath": str(base / "4.0")}]}}))
+        dead = subprocess.Popen(["true"])
+        dead.wait()
+        for ver, pid in (("1.0", os.getpid()), ("2.0", dead.pid)):
+            marker = base / ver / ".in_use"
+            marker.mkdir()
+            (marker / str(pid)).write_text(json.dumps({"pid": pid}))
+        later = time.time() + 5
+        for ver in ("1.0", "2.0", "3.0"):
+            os.utime(base / ver, (later, later))  # newer than the manifest, but recent
+        recent = {p.name for p in _find_plugin_old_versions([prof])}
+        assert not recent, f"fresh install or live pid not protected: {recent}"
+        old = time.time() - 2 * _FRESH_INSTALL_S
+        os.utime(prof / "plugins" / "installed_plugins.json", (old - 60, old - 60))
+        for ver in ("1.0", "2.0", "3.0"):
+            os.utime(base / ver, (old, old))
+        stale = {p.name for p in _find_plugin_old_versions([prof])}
+        assert stale == {"2.0", "3.0"}, f"stale dir still protected: {stale}"
 
     print("selftest ok")
 
@@ -1290,19 +1342,6 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-class _LiveReport(list):
-    """Report list that prints each finished target as it lands.
-
-    Without it an --apply run is silent until the final table, so a stuck
-    target looks identical to a slow one.
-    """
-
-    def append(self, row: dict) -> None:
-        super().append(row)
-        print(f"  done: {row['target']} (freed {_fmt(row.get('freed', 0))})",
-              file=sys.stderr, flush=True)
-
-
 def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list[Path]) -> list[dict]:
     only = set(args.only.split(",")) - {""} if args.only else set()
     skip = set(args.skip.split(",")) - {""} if args.skip else set()
@@ -1325,9 +1364,12 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
             return False
         if name in skip:
             return False
+        if not dry_run:
+            # Names the target about to run, so a stuck one is identifiable.
+            print(f"  -> {name}", file=sys.stderr, flush=True)
         return True
 
-    report: list[dict] = _LiveReport() if not dry_run else []
+    report: list[dict] = []
 
     # --- Level 1: package-manager CLIs ---
 
@@ -1355,10 +1397,14 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
             continue
         size = _du(path)
         freed = 0
-        if not dry_run and size > 0:
+        note = " ".join(cli)
+        if name == "uv" and _cache_lock_held(path):
+            # claude-mem's chroma-mcp (via uvx) holds this for a whole session.
+            note = "skipped: uv cache locked by a running uv process, quit Claude Code sessions"
+        elif not dry_run and size > 0:
             freed = _apply_cli(cli, path)
         report.append({"target": name, "level": 1, "reclaimable": size, "freed": freed,
-                        "risk": "low", "note": " ".join(cli)})
+                        "risk": "low", "note": note})
 
     if active("bun", 1):
         # bun pm cache rm requires a project context; delete the cache dir directly.
@@ -1501,7 +1547,7 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
                     freed += _delete_dir(path, dry_run=False)
         report.append({"target": "claude-cache", "level": 2, "reclaimable": size, "freed": freed,
                         "risk": "low",
-                        "note": f"shell-snapshots entries older than 1d (live session preserved), "
+                        "note": "shell-snapshots entries older than 1d (live session preserved), "
                                 "paste-cache, cache dirs"})
 
     if active("claude-chats", 2):
@@ -1681,7 +1727,7 @@ def main() -> None:
     # excluded from the total rather than crashing the sum, since it isn't a
     # known quantity of freeable space.
     total_reclaimable = sum(r["reclaimable"] for r in report if r["reclaimable"] is not None)
-    total_freed = sum(r["freed"] for r in report)
+    total_freed = sum(r["freed"] for r in report if r["freed"] is not None)
 
     if args.json_out:
         output = {
