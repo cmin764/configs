@@ -99,6 +99,13 @@ python3 scripts/cleanup.py --level 3 --work-dir ~/code --apply
   `~/.claude/projects/*/memory/` is never touched.
 - claude-tmp only removes entries older than 24h, so the live session survives.
 - Docker volumes are never touched except via the explicit `--include-dangerous` path.
+- `uv cache prune` is skipped (with a note) while another process holds
+  `~/.cache/uv/.lock`. claude-mem's chroma-mcp (started through `uvx`) holds it
+  for as long as a Claude Code session is open, so the uv target only frees
+  space when no session is running. Every cache CLI also has a 120s timeout:
+  a stalled one is killed and reported as skipped, never left hanging the run.
+- `--apply` prints a `done: <target>` line to stderr as each target finishes,
+  so a stuck target is visible instead of looking like a slow run.
 - Unknown `--only`/`--skip` names fail fast with the list of valid targets.
 - Claude Code profiles (`~/.claude` plus any `~/.claude-*` `CLAUDE_CONFIG_DIR`
   profile) are auto-discovered by globbing: no profile list to keep in sync.

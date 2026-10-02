@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -384,13 +385,46 @@ def _cli_cache_target(name: str, path: Path, cli: list[str]) -> dict:
     return {"name": name, "path": path, "cli": cli}
 
 
+# A cache CLI that blocks (a held lock, a dead network mount) must not hang
+# the whole run: the child is killed and the target is reported as skipped.
+_CLI_TIMEOUT_S = 120
+
+
+def _cache_lock_held(path: Path) -> bool:
+    """Whether another process holds `path/.lock` (uv's cache lock).
+
+    uv takes it with flock and keeps it for as long as a `uvx`-launched tool
+    runs, so a live claude-mem chroma-mcp server makes `uv cache prune` wait
+    forever. A non-blocking flock probe sees it without touching the cache.
+    """
+    lock = path / ".lock"
+    if not lock.exists():
+        return False
+    with open(lock, "rb") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(fh, fcntl.LOCK_UN)
+    return False
+
+
 def _apply_cli(cli: list[str], path: Path) -> int:
     binary = cli[0]
     if not _has(binary):
         return 0
+    if binary == "uv" and _cache_lock_held(path):
+        print("  [SKIP] uv cache is locked by a running uv process (claude-mem's "
+              "chroma-mcp?). Quit Claude Code sessions and retry.", file=sys.stderr)
+        return 0
     before = _du(path)
     # Run from HOME so CLIs that require a project context (e.g. bun) don't fail.
-    subprocess.run(cli, capture_output=True, text=True, cwd=str(HOME))
+    try:
+        subprocess.run(cli, capture_output=True, text=True, cwd=str(HOME),
+                       timeout=_CLI_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        print(f"  [SKIP] {' '.join(cli)} timed out after {_CLI_TIMEOUT_S}s", file=sys.stderr)
+        return 0
     after = _du(path)
     return max(0, before - after)
 
@@ -495,6 +529,12 @@ def _apply_docker(include_containers: bool, all_images: bool, include_dangerous:
         _run(["docker", "builder", "prune", "-f"])
     after = _measure_docker(include_containers=include_containers or include_dangerous,
                              all_images=all_images or include_dangerous)
+    if before is None or after is None:
+        # Docker Desktop can restart itself after a big prune; the daemon is
+        # briefly unreachable, so the freed amount is unknown, not an error.
+        print("  [NOTE] Docker daemon unreachable after prune, freed space not measured",
+              file=sys.stderr)
+        return 0
     return max(0, before - after)
 
 
@@ -1175,6 +1215,31 @@ def _selftest() -> None:
     for target_name in KNOWN_TARGETS:
         assert len(target_name) <= col_w, f"{target_name!r} wider than the TARGET column ({col_w})"
 
+    # _cache_lock_held: a flock held elsewhere must read as locked, and a
+    # free (or missing) lock must not, so `uv cache prune` is only skipped
+    # when it would genuinely block.
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = Path(tmp)
+        assert not _cache_lock_held(cache), "missing .lock read as held"
+        with open(cache / ".lock", "wb") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX)
+            assert _cache_lock_held(cache), "held flock not detected"
+            fcntl.flock(holder, fcntl.LOCK_UN)
+        assert not _cache_lock_held(cache), "released flock still read as held"
+
+    # _apply_cli: a CLI that outlives the timeout is killed and counted as
+    # 0 freed instead of hanging the run.
+    global _CLI_TIMEOUT_S
+    saved_timeout = _CLI_TIMEOUT_S
+    _CLI_TIMEOUT_S = 1
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            started = time.time()
+            assert _apply_cli(["sleep", "30"], Path(tmp)) == 0
+            assert time.time() - started < 10, "_apply_cli ignored its timeout"
+    finally:
+        _CLI_TIMEOUT_S = saved_timeout
+
     print("selftest ok")
 
 
@@ -1225,6 +1290,19 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+class _LiveReport(list):
+    """Report list that prints each finished target as it lands.
+
+    Without it an --apply run is silent until the final table, so a stuck
+    target looks identical to a slow one.
+    """
+
+    def append(self, row: dict) -> None:
+        super().append(row)
+        print(f"  done: {row['target']} (freed {_fmt(row.get('freed', 0))})",
+              file=sys.stderr, flush=True)
+
+
 def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list[Path]) -> list[dict]:
     only = set(args.only.split(",")) - {""} if args.only else set()
     skip = set(args.skip.split(",")) - {""} if args.skip else set()
@@ -1249,7 +1327,7 @@ def build_report(args: argparse.Namespace, work_dirs: list[Path], profiles: list
             return False
         return True
 
-    report: list[dict] = []
+    report: list[dict] = _LiveReport() if not dry_run else []
 
     # --- Level 1: package-manager CLIs ---
 
