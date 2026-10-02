@@ -924,8 +924,10 @@ def _load_plugin_manifest_paths(profile: Path) -> set[Path]:
 _FRESH_INSTALL_S = 3600
 
 
-def _in_use_by_live_process(version_dir: Path) -> bool:
-    """Whether a `.in_use/<pid>` marker in the version dir names a live process.
+def _in_use_by_live_process(version_dir: Path) -> str | None:
+    """Why a `.in_use/<pid>` marker keeps the version dir, or None if none does.
+
+    Returns "pid N" for a live process, so the report can name what to stop.
 
     Claude Code drops one per process running out of that install (a
     `claude bg-spare` daemon can keep an old version pinned for days), so a
@@ -934,7 +936,7 @@ def _in_use_by_live_process(version_dir: Path) -> bool:
     """
     marker_dir = version_dir / ".in_use"
     if not marker_dir.is_dir():
-        return False
+        return None
     for marker in marker_dir.iterdir():
         try:
             pid = int(json.loads(marker.read_text())["pid"])
@@ -942,14 +944,16 @@ def _in_use_by_live_process(version_dir: Path) -> bool:
         except ProcessLookupError:
             continue
         except PermissionError:
-            return True  # exists, owned by someone else
+            return f"pid {pid}"  # exists, owned by someone else
         except (OSError, ValueError, KeyError, TypeError):
-            return True
-        return True
-    return False
+            return f"unreadable marker {marker.name}"
+        return f"pid {pid}"
+    return None
 
 
-def _find_plugin_old_versions(profiles: list[Path]) -> list[Path]:
+def _find_plugin_old_versions(
+    profiles: list[Path], held: list[str] | None = None
+) -> list[Path]:
     """Version dirs under <profile>/plugins/cache/<vendor>/<plugin>/<version>/
     that installed_plugins.json does not point at, for a plugin that has at
     least one dir the manifest does point at.
@@ -960,6 +964,9 @@ def _find_plugin_old_versions(profiles: list[Path]) -> list[Path]:
     frontend-design@claude-plugins-official installs to a SHA-named dir,
     not a version number). A plugin with no manifest entry at all is left
     alone entirely, even if it has multiple version dirs.
+
+    Dirs kept because a live process holds them are appended to `held` as
+    "<plugin>/<version> (pid N)", so the report can say what to stop.
     """
     results = []
     for profile in profiles:
@@ -990,7 +997,10 @@ def _find_plugin_old_versions(profiles: list[Path]) -> list[Path]:
                     # be the incoming active install with its manifest
                     # entry not landed yet. Skip it rather than risk
                     # deleting the install about to become active.
-                    if _in_use_by_live_process(v):
+                    reason = _in_use_by_live_process(v)
+                    if reason:
+                        if held is not None:
+                            held.append(f"{plugin.name}/{v.name} ({reason})")
                         continue
                     if manifest_mtime is not None:
                         try:
@@ -1379,8 +1389,10 @@ def _selftest() -> None:
         later = time.time() + 5
         for ver in ("1.0", "2.0", "3.0"):
             os.utime(base / ver, (later, later))  # newer than the manifest, but recent
-        recent = {p.name for p in _find_plugin_old_versions([prof])}
+        held: list[str] = []
+        recent = {p.name for p in _find_plugin_old_versions([prof], held)}
         assert not recent, f"fresh install or live pid not protected: {recent}"
+        assert held == [f"p/1.0 (pid {os.getpid()})"], f"held not reported: {held}"
         old = time.time() - 2 * _FRESH_INSTALL_S
         os.utime(prof / "plugins" / "installed_plugins.json", (old - 60, old - 60))
         for ver in ("1.0", "2.0", "3.0"):
@@ -1982,8 +1994,9 @@ def build_report(
         )
 
     if active("plugin-old-versions", 3):
+        held: list[str] = []
         old_version_results = _apply_dirs(
-            _find_plugin_old_versions(profiles), dry_run=dry_run, yes=args.yes
+            _find_plugin_old_versions(profiles, held), dry_run=dry_run, yes=args.yes
         )
         size = sum(r["size"] for r in old_version_results)
         freed = sum(r["freed"] for r in old_version_results)
@@ -1994,7 +2007,10 @@ def build_report(
                 "reclaimable": size,
                 "freed": freed,
                 "risk": "low",
-                "note": f"{len(old_version_results)} superseded plugin version dirs",
+                "note": f"{len(old_version_results)} superseded plugin version dirs"
+                + (
+                    f"; kept, held by a live process: {', '.join(held)}" if held else ""
+                ),
                 "details": [r["path"] for r in old_version_results],
             }
         )
