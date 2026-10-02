@@ -966,6 +966,16 @@ def new_profile(org, dry_run=False, home=HOME):
         return env_file.exists() and bool(CLAUDE_MEM_CRED_RE.search(env_file.read_text()))
 
     def write_cred():
+        # Claude Code's shell tool runs commands with stdin on /dev/null, so
+        # setup-token's browser flow and the hidden paste below can never
+        # complete and the run hangs until its timeout. A piped token (CI)
+        # is a different stdin and still passes.
+        if os.path.samestat(os.fstat(0), os.stat(os.devnull)):
+            print("  [needs terminal] no keyboard input here (stdin is /dev/null). Run this "
+                  "in a real terminal tab, or copy your token and write the file yourself:\n"
+                  f"    umask 077; printf 'ANTHROPIC_AUTH_TOKEN=%s\\n' \"$(pbpaste)\" > {env_file}\n"
+                  "  then re-run --new-profile.")
+            return
         print("\n  ******************************************************************")
         print("  *  claude-mem's OAuth pre-flight reads the DEFAULT profile's login  *")
         print("  *  unless this file carries a credential. Running                    *")
