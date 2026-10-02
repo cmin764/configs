@@ -19,6 +19,7 @@ Modes:
 
 Stdlib only. Safe to re-run any mode; that repeatability is the test.
 """
+
 import contextlib
 import getpass
 import io
@@ -70,8 +71,9 @@ def claude_profile_dirs():
     if not work.is_dir():
         return default
     orgs = sorted(p.name.lower() for p in work.iterdir() if p.is_dir())
-    extra = [HOME / f".claude-{org}" for org in orgs
-             if (HOME / f".claude-{org}").is_dir()]
+    extra = [
+        HOME / f".claude-{org}" for org in orgs if (HOME / f".claude-{org}").is_dir()
+    ]
     return default + extra
 
 
@@ -82,12 +84,16 @@ ITERM2_DST = "~/Library/Application Support/iTerm2/DynamicProfiles/Wandercode.js
 # iTerm2 is handled separately by sync_iterm2 (its repo copy is re-extracted
 # from a binary plist, not just copied), so it isn't listed here.
 COPIES = [
-    ("apps/cursor/settings.json",
-     "~/Library/Application Support/Cursor/User/settings.json"),
+    (
+        "apps/cursor/settings.json",
+        "~/Library/Application Support/Cursor/User/settings.json",
+    ),
     ("apps/cursor/mcp.json", "~/.cursor/mcp.json"),
-    ("apps/sublime/Preferences.sublime-settings",
-     "~/Library/Application Support/Sublime Text/Packages/User/"
-     "Preferences.sublime-settings"),
+    (
+        "apps/sublime/Preferences.sublime-settings",
+        "~/Library/Application Support/Sublime Text/Packages/User/"
+        "Preferences.sublime-settings",
+    ),
     ("apps/docker/daemon.json", "~/.docker/daemon.json"),
     # Codex's hook wiring, hand-authored the same way Claude Code's
     # settings.json hooks are. config.toml isn't tracked here: it mixes this
@@ -101,9 +107,17 @@ COPIES = [
 # fields that must never reach a public repo (auth identity, caches).
 # Pull drops them; push writes as-is.
 TRIMMED_COPIES = [
-    ("apps/cursor/cli-config.json", "~/.cursor/cli-config.json",
-     {"authInfo", "privacyCache", "autoReviewAvailabilityCache",
-      "serverConfigCache", "network"}),
+    (
+        "apps/cursor/cli-config.json",
+        "~/.cursor/cli-config.json",
+        {
+            "authInfo",
+            "privacyCache",
+            "autoReviewAvailabilityCache",
+            "serverConfigCache",
+            "network",
+        },
+    ),
 ]
 
 ITERM2_PLIST = Path("~/Library/Preferences/com.googlecode.iterm2.plist").expanduser()
@@ -129,7 +143,9 @@ def deep_merge(dest, src):
     for key, value in src.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = deep_merge(result[key], value)
-        elif key in result and isinstance(result[key], list) and isinstance(value, list):
+        elif (
+            key in result and isinstance(result[key], list) and isinstance(value, list)
+        ):
             result[key] = result[key] + [v for v in value if v not in result[key]]
         else:
             result[key] = value
@@ -154,12 +170,18 @@ def _selftest():
     base = {"a": 1, "b": {"c": 2, "d": 3}, "grants": ["live-only"]}
     override = {"b": {"c": 99}, "e": 5, "grants": ["template", "live-only"]}
     merged = deep_merge(base, override)
-    assert merged == {"a": 1, "b": {"c": 99, "d": 3}, "e": 5,
-                       "grants": ["live-only", "template"]}, merged
-    assert base == {"a": 1, "b": {"c": 2, "d": 3}, "grants": ["live-only"]}, \
+    assert merged == {
+        "a": 1,
+        "b": {"c": 99, "d": 3},
+        "e": 5,
+        "grants": ["live-only", "template"],
+    }, merged
+    assert base == {"a": 1, "b": {"c": 2, "d": 3}, "grants": ["live-only"]}, (
         "deep_merge mutated dest"
-    assert override == {"b": {"c": 99}, "e": 5, "grants": ["template", "live-only"]}, \
+    )
+    assert override == {"b": {"c": 99}, "e": 5, "grants": ["template", "live-only"]}, (
         "deep_merge mutated src"
+    )
     assert diff_paths({"a": 1}, {"a": 1}) == []
     assert diff_paths({"a": 1}, {"a": 2}) == ["a: differs"]
 
@@ -170,27 +192,41 @@ def _selftest():
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / ".claude-mem").mkdir()
-            (home / ".claude-mem" / "settings.json").write_text(json.dumps({
-                "CLAUDE_MEM_DATA_DIR": str(home / ".claude-mem"),
-                "CLAUDE_MEM_WORKER_PORT": str(CLAUDE_MEM_DEFAULT_WORKER_PORT),
-                "CLAUDE_MEM_SERVER_URL": f"http://127.0.0.1:{CLAUDE_MEM_DEFAULT_SERVER_PORT}",
-                "CLAUDE_MEM_SERVER_BETA_URL": f"http://127.0.0.1:{CLAUDE_MEM_DEFAULT_SERVER_PORT}"}))
+            (home / ".claude-mem" / "settings.json").write_text(
+                json.dumps(
+                    {
+                        "CLAUDE_MEM_DATA_DIR": str(home / ".claude-mem"),
+                        "CLAUDE_MEM_WORKER_PORT": str(CLAUDE_MEM_DEFAULT_WORKER_PORT),
+                        "CLAUDE_MEM_SERVER_URL": f"http://127.0.0.1:{CLAUDE_MEM_DEFAULT_SERVER_PORT}",
+                        "CLAUDE_MEM_SERVER_BETA_URL": f"http://127.0.0.1:{CLAUDE_MEM_DEFAULT_SERVER_PORT}",
+                    }
+                )
+            )
             (home / ".claude-mem-org").mkdir()
-            (home / ".claude-mem-org" / "settings.json").write_text(json.dumps(org_settings))
+            (home / ".claude-mem-org" / "settings.json").write_text(
+                json.dumps(org_settings)
+            )
             if env_text is not None:
                 (home / ".claude-mem-org" / ".env").write_text(env_text)
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 check_claude_mem_isolation(home, lambda: logged_in)
             return out.getvalue()
+
     isolated = isolated_claude_mem_settings(
-        {}, Path("/x/.claude-mem-org"), str(CLAUDE_MEM_DEFAULT_WORKER_PORT + 1),
-        str(CLAUDE_MEM_DEFAULT_WORKER_PORT + 1 + CLAUDE_MEM_SERVER_PORT_OFFSET))
+        {},
+        Path("/x/.claude-mem-org"),
+        str(CLAUDE_MEM_DEFAULT_WORKER_PORT + 1),
+        str(CLAUDE_MEM_DEFAULT_WORKER_PORT + 1 + CLAUDE_MEM_SERVER_PORT_OFFSET),
+    )
     shared = dict(isolated, CLAUDE_MEM_WORKER_PORT=str(CLAUDE_MEM_DEFAULT_WORKER_PORT))
     r = isolation_report(shared, False)
     assert "[LEAK RISK]" in r and "CLAUDE_MEM_WORKER_PORT" in r, r
     r = isolation_report(isolated, True)
-    assert "[isolated]     .claude-mem-org" in r and "default profile (~/.claude) is logged in" in r, r
+    assert (
+        "[isolated]     .claude-mem-org" in r
+        and "default profile (~/.claude) is logged in" in r
+    ), r
     r = isolation_report(isolated, False)
     assert r.count("[isolated]") == 2 and "LEAK" not in r, r
     # An .env credential makes the default login irrelevant for that org...
@@ -204,36 +240,80 @@ def _selftest():
     # and the isolated settings touch exactly the six colliding keys.
     d, off = CLAUDE_MEM_DEFAULT_WORKER_PORT, CLAUDE_MEM_SERVER_PORT_OFFSET
     free = lambda p: True  # noqa: E731 -- no real sockets in the selftest
-    assert allocate_claude_mem_ports(set(), set(), free) == (str(d + 1), str(d + 1 + off))
-    assert allocate_claude_mem_ports({str(d + 1)}, set(), free) == (str(d + 2), str(d + 2 + off))
-    assert allocate_claude_mem_ports(set(), {str(d + 1 + off)}, free) == (str(d + 2), str(d + 2 + off))
-    assert allocate_claude_mem_ports(set(), set(), lambda p: p != d + 1) == (str(d + 2), str(d + 2 + off))
-    assert allocate_claude_mem_ports(set(), set(), lambda p: p != d + 1 + off) == (str(d + 2), str(d + 2 + off))
+    assert allocate_claude_mem_ports(set(), set(), free) == (
+        str(d + 1),
+        str(d + 1 + off),
+    )
+    assert allocate_claude_mem_ports({str(d + 1)}, set(), free) == (
+        str(d + 2),
+        str(d + 2 + off),
+    )
+    assert allocate_claude_mem_ports(set(), {str(d + 1 + off)}, free) == (
+        str(d + 2),
+        str(d + 2 + off),
+    )
+    assert allocate_claude_mem_ports(set(), set(), lambda p: p != d + 1) == (
+        str(d + 2),
+        str(d + 2 + off),
+    )
+    assert allocate_claude_mem_ports(set(), set(), lambda p: p != d + 1 + off) == (
+        str(d + 2),
+        str(d + 2 + off),
+    )
     # ten orgs allocate ten distinct pairs with no overlap between worker and server sides
     used_w, used_s, seen = set(), set(), set()
     for _ in range(10):
         w_, s_ = allocate_claude_mem_ports(used_w, used_s, free)
         assert w_ not in seen and s_ not in seen, (w_, s_, seen)
-        seen.update({w_, s_}); used_w.add(w_); used_s.add(s_)
+        seen.update({w_, s_})
+        used_w.add(w_)
+        used_s.add(s_)
     w, srv = str(d + 1), str(d + 1 + off)
     s = isolated_claude_mem_settings(
-        {"CLAUDE_MEM_MODEL": "m", "CLAUDE_MEM_WORKER_PORT": str(CLAUDE_MEM_DEFAULT_WORKER_PORT)},
-        Path("/h/.claude-mem-org"), w, srv)
+        {
+            "CLAUDE_MEM_MODEL": "m",
+            "CLAUDE_MEM_WORKER_PORT": str(CLAUDE_MEM_DEFAULT_WORKER_PORT),
+        },
+        Path("/h/.claude-mem-org"),
+        w,
+        srv,
+    )
     assert s["CLAUDE_MEM_MODEL"] == "m" and s["CLAUDE_MEM_WORKER_PORT"] == w
     assert s["CLAUDE_MEM_DATA_DIR"] == "/h/.claude-mem-org"
     assert s["CLAUDE_MEM_QUEUE_REDIS_PREFIX"] == f"claude_mem_{w}"
-    assert s["CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH"] == "/h/.claude-mem-org/transcript-watch.json"
-    assert s["CLAUDE_MEM_SERVER_URL"] == s["CLAUDE_MEM_SERVER_BETA_URL"] == f"http://127.0.0.1:{srv}"
-    assert CLAUDE_MEM_CRED_RE.search("ANTHROPIC_AUTH_TOKEN=sk-x\n") and \
-        not CLAUDE_MEM_CRED_RE.search("ANTHROPIC_AUTH_TOKEN=\n# ANTHROPIC_API_KEY=y\n")
+    assert (
+        s["CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH"]
+        == "/h/.claude-mem-org/transcript-watch.json"
+    )
+    assert (
+        s["CLAUDE_MEM_SERVER_URL"]
+        == s["CLAUDE_MEM_SERVER_BETA_URL"]
+        == f"http://127.0.0.1:{srv}"
+    )
+    assert CLAUDE_MEM_CRED_RE.search(
+        "ANTHROPIC_AUTH_TOKEN=sk-x\n"
+    ) and not CLAUDE_MEM_CRED_RE.search(
+        "ANTHROPIC_AUTH_TOKEN=\n# ANTHROPIC_API_KEY=y\n"
+    )
     # The registry is whatever settings.json files exist, minus the profile
     # being (re)built, with claude-mem's defaults filled in for missing keys.
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp)
-        for name, body in (("a", {"CLAUDE_MEM_WORKER_PORT": "40000", "CLAUDE_MEM_SERVER_URL": "http://127.0.0.1:40200"}),
-                           ("b", {}), ("self", {"CLAUDE_MEM_WORKER_PORT": "1"})):
+        for name, body in (
+            (
+                "a",
+                {
+                    "CLAUDE_MEM_WORKER_PORT": "40000",
+                    "CLAUDE_MEM_SERVER_URL": "http://127.0.0.1:40200",
+                },
+            ),
+            ("b", {}),
+            ("self", {"CLAUDE_MEM_WORKER_PORT": "1"}),
+        ):
             (home / f".claude-mem-{name}").mkdir()
-            (home / f".claude-mem-{name}" / "settings.json").write_text(json.dumps(body))
+            (home / f".claude-mem-{name}" / "settings.json").write_text(
+                json.dumps(body)
+            )
         uw, us = used_claude_mem_ports(home, exclude=home / ".claude-mem-self")
         assert uw == {"40000", str(CLAUDE_MEM_DEFAULT_WORKER_PORT)}, uw
         assert us == {"40200", str(CLAUDE_MEM_DEFAULT_SERVER_PORT)}, us
@@ -249,9 +329,15 @@ def _selftest():
     assert list(kept) == ["x", "n", "z", "new"], "repo key order not kept"
     assert repr(kept["x"]) == "1.0" and repr(kept["z"]) == "4", kept
     tree = {"a": f"{HOME}/x", "b": [f"cd {HOME}", 3], "c": {"d": "plain"}}
-    assert _portable(tree) == {"a": "$HOME/x", "b": ["cd $HOME", 3], "c": {"d": "plain"}}
+    assert _portable(tree) == {
+        "a": "$HOME/x",
+        "b": ["cd $HOME", 3],
+        "c": {"d": "plain"},
+    }
     assert _unportable(_portable(tree)) == tree
-    assert _json_safe({"a": [1, 2.5, True, None, "s"]}) == {"a": [1, 2.5, True, None, "s"]}
+    assert _json_safe({"a": [1, 2.5, True, None, "s"]}) == {
+        "a": [1, 2.5, True, None, "s"]
+    }
     for bad in (b"blob", {"k": [b"blob"]}):
         try:
             _json_safe({"Some Key": bad})
@@ -263,16 +349,27 @@ def _selftest():
     # edits the repo never saw, or no history at all, do not.
     v1, v2, edited = {"a": 1}, {"a": 2}, {"a": 9}
     assert _push_decision([v2, v1], v2, v2) == "in sync"
-    assert _push_decision([v2, v1], v1, v2) == "push"      # repo moved on
+    assert _push_decision([v2, v1], v1, v2) == "push"  # repo moved on
     assert _push_decision([v2, v1], edited, v2) == "skip"  # unpulled live edit
-    assert _push_decision([], v1, v2) == "skip"            # no history to judge
+    assert _push_decision([], v1, v2) == "skip"  # no history to judge
     # The hook filter removes iTerm2's hook, never a sibling in its group.
     it = {"type": "command", "command": f"{HOME}/{ITERM2_HOOK_MARKER}"}
     mine = {"type": "command", "command": "/x/mine.sh"}
-    st = {"hooks": {"Stop": [{"hooks": [it]}], "Pre": [{"matcher": "B", "hooks": [it, mine]}],
-                    "Post": [{"hooks": [mine]}]}, "other": 1}
-    assert _without_iterm_hooks(st) == {"hooks": {
-        "Pre": [{"matcher": "B", "hooks": [mine]}], "Post": [{"hooks": [mine]}]}, "other": 1}
+    st = {
+        "hooks": {
+            "Stop": [{"hooks": [it]}],
+            "Pre": [{"matcher": "B", "hooks": [it, mine]}],
+            "Post": [{"hooks": [mine]}],
+        },
+        "other": 1,
+    }
+    assert _without_iterm_hooks(st) == {
+        "hooks": {
+            "Pre": [{"matcher": "B", "hooks": [mine]}],
+            "Post": [{"hooks": [mine]}],
+        },
+        "other": 1,
+    }
     assert _without_iterm_hooks({"other": 1}) == {"other": 1}
     print("selftest ok")
 
@@ -307,7 +404,9 @@ def sync_symlink(src_rel, dst_rel, mode):
         if dst.is_symlink() and dst.resolve() == src.resolve():
             print(f"[symlink ok]   {dst_rel}")
         elif dst.is_symlink():
-            print(f"[broken link]  {dst_rel} (wrong or dangling target, --restore will fix)")
+            print(
+                f"[broken link]  {dst_rel} (wrong or dangling target, --restore will fix)"
+            )
         elif not dst.exists():
             print(f"[missing]      {dst_rel} (not yet linked)")
         else:
@@ -361,8 +460,10 @@ def sync_trimmed(src_rel, dst_rel, drop_keys, mode):
         for k in drop_keys:
             live.pop(k, None)
         repo_json = json.loads(src.read_text()) if src.exists() else {}
-        print(f"[{'in sync' if live == repo_json else 'differs'}]      "
-              f"{dst_rel} (trimmed compare)")
+        print(
+            f"[{'in sync' if live == repo_json else 'differs'}]      "
+            f"{dst_rel} (trimmed compare)"
+        )
         return
     if mode in ("restore", "push"):
         sync_copy(src_rel, dst_rel, mode)
@@ -376,7 +477,9 @@ def sync_trimmed(src_rel, dst_rel, drop_keys, mode):
             live.pop(k, None)
         ensure_parent(src)
         src.write_text(json.dumps(live, indent=2) + "\n")
-        print(f"  pulled {dst_rel} -> {src_rel} (dropped {', '.join(sorted(drop_keys))})")
+        print(
+            f"  pulled {dst_rel} -> {src_rel} (dropped {', '.join(sorted(drop_keys))})"
+        )
 
 
 # Marks the hook commands iTerm2's Claude Code integration installs.
@@ -399,8 +502,11 @@ def _without_iterm_hooks(settings):
     for event, groups in hooks.items():
         survivors = []
         for group in groups:
-            own = [h for h in group.get("hooks", [])
-                   if ITERM2_HOOK_MARKER not in h.get("command", "")]
+            own = [
+                h
+                for h in group.get("hooks", [])
+                if ITERM2_HOOK_MARKER not in h.get("command", "")
+            ]
             if own or not group.get("hooks"):
                 survivors.append({**group, "hooks": own} if own else group)
         if survivors:
@@ -441,8 +547,10 @@ def sync_merge(src_rel, dst_rel, mode):
             print(f"  NOT auto-pulled ({dst_rel} differs from the template):")
             for d in diffs:
                 print(f"    {d}")
-            print("  review by hand -- pulling automatically would re-add "
-                  "the noise the template deliberately strips.")
+            print(
+                "  review by hand -- pulling automatically would re-add "
+                "the noise the template deliberately strips."
+            )
         else:
             print(f"  {dst_rel} matches the template, nothing to pull")
 
@@ -494,8 +602,10 @@ def _json_safe(value, path=""):
         for i, v in enumerate(value):
             _json_safe(v, f"{path}[{i}]")
     elif value is not None and not isinstance(value, (str, int, float, bool)):
-        raise TypeError(f"{path or 'profile'} is a {type(value).__name__}, which "
-                        "JSON can't carry; teach sync.py about it before pulling")
+        raise TypeError(
+            f"{path or 'profile'} is a {type(value).__name__}, which "
+            "JSON can't carry; teach sync.py about it before pulling"
+        )
     return value
 
 
@@ -515,11 +625,14 @@ def _iterm2_live_profile():
         profiles = plistlib.load(f).get("New Bookmarks", [])
     profile = next((p for p in profiles if p.get("Name") == "Wandercode"), None)
     if profile is None:
-        return None, ("no profile named 'Wandercode' in the local plist -- "
-                      "rename your profile first, or this would overwrite the "
-                      "template with the wrong one")
-    profile = _portable({k: v for k, v in profile.items()
-                         if k not in ITERM2_MACHINE_KEYS})
+        return None, (
+            "no profile named 'Wandercode' in the local plist -- "
+            "rename your profile first, or this would overwrite the "
+            "template with the wrong one"
+        )
+    profile = _portable(
+        {k: v for k, v in profile.items() if k not in ITERM2_MACHINE_KEYS}
+    )
     profile["Guid"] = ITERM2_PROFILE_GUID
     try:
         return _json_safe(profile), None
@@ -563,9 +676,12 @@ def _iterm2_repo_profile():
 def _iterm2_history(limit=50):
     """Committed versions of the repo profile, newest first. Empty when git
     or the history is unavailable (fresh download without .git, new file)."""
+
     def git(*args):
-        return subprocess.run(["git", "-C", str(REPO_ROOT), *args],
-                              capture_output=True, text=True)
+        return subprocess.run(
+            ["git", "-C", str(REPO_ROOT), *args], capture_output=True, text=True
+        )
+
     log = git("log", f"-n{limit}", "--format=%H", "--", ITERM2_DST_REL)
     versions = []
     for sha in log.stdout.split() if log.returncode == 0 else []:
@@ -578,7 +694,7 @@ def _iterm2_history(limit=50):
 
 
 def _push_decision(history, live, repo):
-    """"in sync", "push" or "skip" for --push.
+    """ "in sync", "push" or "skip" for --push.
 
     A two-way compare can't say which side moved. Git history can: a live
     profile equal to some committed version is a known older state, so the
@@ -596,8 +712,9 @@ def _iterm2_deploy(dst_rel):
     src = repo_path(ITERM2_DST_REL)
     dst = home_path(dst_rel)
     ensure_parent(dst)
-    dst.write_text(json.dumps(_unportable(json.loads(src.read_text())),
-                              indent=2) + "\n")
+    dst.write_text(
+        json.dumps(_unportable(json.loads(src.read_text())), indent=2) + "\n"
+    )
     print(f"  wrote {dst_rel}")
 
 
@@ -628,8 +745,10 @@ def sync_iterm2(mode):
             # values, so the git diff shows only what really changed.
             out_path = repo_path(ITERM2_DST_REL)
             ensure_parent(out_path)
-            out_path.write_text(json.dumps(
-                {"Profiles": [_keep_repo_form(repo or {}, live)]}, indent=2) + "\n")
+            out_path.write_text(
+                json.dumps({"Profiles": [_keep_repo_form(repo or {}, live)]}, indent=2)
+                + "\n"
+            )
             print(f"  pulled iTerm2 profile 'Wandercode' -> {ITERM2_DST_REL}")
         return
     if repo is None:
@@ -647,14 +766,17 @@ def sync_iterm2(mode):
         elif decision == "push":
             _iterm2_deploy(ITERM2_DST)
         else:
-            print(f"  skip {ITERM2_DST_REL}: the live profile has changes the repo "
-                  "never saw (or there is no git history to tell). --pull to keep "
-                  "them, --restore to overwrite with the repo's.")
+            print(
+                f"  skip {ITERM2_DST_REL}: the live profile has changes the repo "
+                "never saw (or there is no git history to tell). --pull to keep "
+                "them, --restore to overwrite with the repo's."
+            )
 
 
 def _defaults_read_int(domain, key):
-    result = subprocess.run(["defaults", "read", domain, key],
-                             capture_output=True, text=True)
+    result = subprocess.run(
+        ["defaults", "read", domain, key], capture_output=True, text=True
+    )
     return int(result.stdout.strip()) if result.returncode == 0 else None
 
 
@@ -672,14 +794,27 @@ def sync_iterm2_app_prefs(mode):
         for key in ITERM2_APP_PREF_KEYS:
             if key not in repo_prefs:
                 continue
-            subprocess.run(["defaults", "write", ITERM2_APP_PREFS_DOMAIN, key,
-                             "-int", str(repo_prefs[key])], check=True)
+            subprocess.run(
+                [
+                    "defaults",
+                    "write",
+                    ITERM2_APP_PREFS_DOMAIN,
+                    key,
+                    "-int",
+                    str(repo_prefs[key]),
+                ],
+                check=True,
+            )
         if repo_prefs:
-            print(f"  wrote iterm2 app prefs: {', '.join(repo_prefs)} "
-                  "(quit and reopen iTerm2 to pick up)")
+            print(
+                f"  wrote iterm2 app prefs: {', '.join(repo_prefs)} "
+                "(quit and reopen iTerm2 to pick up)"
+            )
     elif mode == "pull":
-        live_prefs = {k: _defaults_read_int(ITERM2_APP_PREFS_DOMAIN, k)
-                      for k in ITERM2_APP_PREF_KEYS}
+        live_prefs = {
+            k: _defaults_read_int(ITERM2_APP_PREFS_DOMAIN, k)
+            for k in ITERM2_APP_PREF_KEYS
+        }
         live_prefs = {k: v for k, v in live_prefs.items() if v is not None}
         if not live_prefs:
             print(f"  skip {ITERM2_APP_PREFS_REL}: nothing live to pull")
@@ -695,9 +830,20 @@ def _default_profile_logged_in():
     so this is exactly the entry claude-mem's pre-flight would pick up."""
     if sys.platform != "darwin":
         return False
-    return subprocess.run(
-        ["security", "find-generic-password", "-s", "Claude Code-credentials",
-         "-a", getpass.getuser()], capture_output=True).returncode == 0
+    return (
+        subprocess.run(
+            [
+                "security",
+                "find-generic-password",
+                "-s",
+                "Claude Code-credentials",
+                "-a",
+                getpass.getuser(),
+            ],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_logged_in):
@@ -712,10 +858,15 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
     if not default_settings.exists():
         return
     default = json.loads(default_settings.read_text())
-    shared_keys = ["CLAUDE_MEM_DATA_DIR", "CLAUDE_MEM_WORKER_PORT",
-                   "CLAUDE_MEM_SERVER_URL", "CLAUDE_MEM_SERVER_BETA_URL"]
-    org_dirs = [d for d in sorted(home.glob(".claude-mem-*"))
-                if (d / "settings.json").exists()]
+    shared_keys = [
+        "CLAUDE_MEM_DATA_DIR",
+        "CLAUDE_MEM_WORKER_PORT",
+        "CLAUDE_MEM_SERVER_URL",
+        "CLAUDE_MEM_SERVER_BETA_URL",
+    ]
+    org_dirs = [
+        d for d in sorted(home.glob(".claude-mem-*")) if (d / "settings.json").exists()
+    ]
     # A credential in <data-dir>/.env makes claude-mem's pre-flight return
     # before its Keychain lookup, so that profile is immune to the default
     # login below. Same regex the pid-guard hook uses.
@@ -726,16 +877,22 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
         clashes = [k for k in shared_keys if org.get(k) == default.get(k)]
         worker, server = claude_mem_ports(org_dir / "settings.json")
         if clashes:
-            print(f"[LEAK RISK]    {org_dir.name}/settings.json shares "
-                  f"{', '.join(clashes)} with the default profile -- fix "
-                  f"per SKILL.md step 7's claude-mem isolation block")
+            print(
+                f"[LEAK RISK]    {org_dir.name}/settings.json shares "
+                f"{', '.join(clashes)} with the default profile -- fix "
+                f"per SKILL.md step 7's claude-mem isolation block"
+            )
         else:
-            print(f"[isolated]     {org_dir.name}/settings.json "
-                  f"(worker port {worker}, server port {server})")
+            print(
+                f"[isolated]     {org_dir.name}/settings.json "
+                f"(worker port {worker}, server port {server})"
+            )
         env_file = org_dir / ".env"
         if env_file.exists() and cred_re.search(env_file.read_text()):
-            print(f"[isolated]     {org_dir.name}/.env carries its own credential "
-                  f"(claude-mem's Keychain pre-flight bypassed)")
+            print(
+                f"[isolated]     {org_dir.name}/.env carries its own credential "
+                f"(claude-mem's Keychain pre-flight bypassed)"
+            )
         else:
             unprotected.append(org_dir.name)
     # Ports and data dirs don't cover the auth side: claude-mem's OAuth
@@ -746,17 +903,22 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
     # .env credential of its own.
     if unprotected:
         if default_logged_in():
-            print(f"[LEAK RISK]    default profile (~/.claude) is logged in and "
-                  f"{', '.join(unprotected)} have no .env credential -- their "
-                  f"workers will inject its token; give them one, or run: "
-                  f"CLAUDE_CONFIG_DIR=~/.claude claude auth logout")
+            print(
+                f"[LEAK RISK]    default profile (~/.claude) is logged in and "
+                f"{', '.join(unprotected)} have no .env credential -- their "
+                f"workers will inject its token; give them one, or run: "
+                f"CLAUDE_CONFIG_DIR=~/.claude claude auth logout"
+            )
         else:
-            print("[isolated]     default profile logged out (nothing for "
-                  "claude-mem's OAuth pre-flight to hijack)")
+            print(
+                "[isolated]     default profile logged out (nothing for "
+                "claude-mem's OAuth pre-flight to hijack)"
+            )
 
 
 CLAUDE_MEM_CRED_RE = re.compile(
-    r"^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL)=.+", re.MULTILINE)
+    r"^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL)=.+", re.MULTILINE
+)
 
 # claude-mem derives its default ports from the OS uid, not from the data
 # dir -- so every profile on one machine computes the same pair, which is
@@ -786,7 +948,9 @@ def claude_mem_ports(settings_path):
     missing keys fall back to claude-mem's own uid-derived defaults."""
     d = json.loads(settings_path.read_text())
     worker = d.get("CLAUDE_MEM_WORKER_PORT") or str(CLAUDE_MEM_DEFAULT_WORKER_PORT)
-    server = (d.get("CLAUDE_MEM_SERVER_URL") or f":{CLAUDE_MEM_DEFAULT_SERVER_PORT}").rsplit(":", 1)[-1]
+    server = (
+        d.get("CLAUDE_MEM_SERVER_URL") or f":{CLAUDE_MEM_DEFAULT_SERVER_PORT}"
+    ).rsplit(":", 1)[-1]
     return worker, server
 
 
@@ -798,9 +962,14 @@ def allocate_claude_mem_ports(used_worker, used_server, bindable=_port_bindable)
     port = CLAUDE_MEM_DEFAULT_WORKER_PORT + 1
     while port + CLAUDE_MEM_SERVER_PORT_OFFSET < 65535:
         worker, server = str(port), str(port + CLAUDE_MEM_SERVER_PORT_OFFSET)
-        if worker not in used_worker and server not in used_server \
-                and worker not in used_server and server not in used_worker \
-                and bindable(port) and bindable(port + CLAUDE_MEM_SERVER_PORT_OFFSET):
+        if (
+            worker not in used_worker
+            and server not in used_server
+            and worker not in used_server
+            and server not in used_worker
+            and bindable(port)
+            and bindable(port + CLAUDE_MEM_SERVER_PORT_OFFSET)
+        ):
             return worker, server
         port += 1
     raise SystemExit("no free claude-mem port pair left")
@@ -811,24 +980,31 @@ def isolated_claude_mem_settings(base, mem_dir, worker_port, server_port):
     data dir and ports. These six keys are every place claude-mem would
     otherwise land on the same file or socket as another profile."""
     out = dict(base)
-    out.update({
-        "CLAUDE_MEM_DATA_DIR": str(mem_dir),
-        "CLAUDE_MEM_WORKER_PORT": worker_port,
-        "CLAUDE_MEM_QUEUE_REDIS_PREFIX": f"claude_mem_{worker_port}",
-        "CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH": str(mem_dir / "transcript-watch.json"),
-        "CLAUDE_MEM_SERVER_URL": f"http://127.0.0.1:{server_port}",
-        "CLAUDE_MEM_SERVER_BETA_URL": f"http://127.0.0.1:{server_port}",
-    })
+    out.update(
+        {
+            "CLAUDE_MEM_DATA_DIR": str(mem_dir),
+            "CLAUDE_MEM_WORKER_PORT": worker_port,
+            "CLAUDE_MEM_QUEUE_REDIS_PREFIX": f"claude_mem_{worker_port}",
+            "CLAUDE_MEM_TRANSCRIPTS_CONFIG_PATH": str(
+                mem_dir / "transcript-watch.json"
+            ),
+            "CLAUDE_MEM_SERVER_URL": f"http://127.0.0.1:{server_port}",
+            "CLAUDE_MEM_SERVER_BETA_URL": f"http://127.0.0.1:{server_port}",
+        }
+    )
     return out
 
 
 def _claude(config_dir, *args, capture=False):
     env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config_dir))
     try:
-        return subprocess.run(["claude", *args], env=env, text=True,
-                              capture_output=capture)
+        return subprocess.run(
+            ["claude", *args], env=env, text=True, capture_output=capture
+        )
     except FileNotFoundError:  # no claude binary (CI, or restore step 1 skipped)
-        return subprocess.CompletedProcess(["claude", *args], 127, "", "claude: not found")
+        return subprocess.CompletedProcess(
+            ["claude", *args], 127, "", "claude: not found"
+        )
 
 
 def used_claude_mem_ports(home, exclude=None):
@@ -850,17 +1026,24 @@ def new_profile(org, dry_run=False, home=HOME):
     for claude-mem's .env) is shouted, because skipping it is the leak."""
     org = org.lower()
     work = home / "Work"
-    matches = [p for p in work.iterdir() if p.is_dir() and p.name.lower() == org] \
-        if work.is_dir() else []
+    matches = (
+        [p for p in work.iterdir() if p.is_dir() and p.name.lower() == org]
+        if work.is_dir()
+        else []
+    )
     if not matches:
-        raise SystemExit(f"no ~/Work/<dir> matching '{org}' -- .zshrc's chpwd hook "
-                         f"derives the profile from that directory name, so it must "
-                         f"exist first")
+        raise SystemExit(
+            f"no ~/Work/<dir> matching '{org}' -- .zshrc's chpwd hook "
+            f"derives the profile from that directory name, so it must "
+            f"exist first"
+        )
     config_dir = home / f".claude-{org}"
     mem_dir = home / f".claude-mem-{org}"
     env_file = mem_dir / ".env"
     print(f"== config-sync --new-profile {org}{' (dry run)' if dry_run else ''} ==")
-    print(f"   work dir   {matches[0]}\n   profile    {config_dir}\n   claude-mem {mem_dir}")
+    print(
+        f"   work dir   {matches[0]}\n   profile    {config_dir}\n   claude-mem {mem_dir}"
+    )
 
     def step(label, done, action):
         if done():
@@ -872,32 +1055,53 @@ def new_profile(org, dry_run=False, home=HOME):
             action()
             print(f"  [{'done' if done() else 'FAIL'}]  {label}")
 
-    step("profile directory", config_dir.is_dir,
-         lambda: config_dir.mkdir(mode=0o700))
+    step("profile directory", config_dir.is_dir, lambda: config_dir.mkdir(mode=0o700))
 
     def logged_in():
         if not config_dir.is_dir():
             return False
         r = _claude(config_dir, "auth", "status", capture=True)
         return r.returncode == 0 and '"loggedIn": true' in r.stdout
-    step("logged in under this profile (browser OAuth, full account)", logged_in,
-         lambda: _claude(config_dir, "auth", "login"))
 
-    step("shared config linked/merged into the profile (the per-profile part of --push)",
-         lambda: (config_dir / "hooks").is_symlink() and (config_dir / "settings.json").exists(),
-         lambda: sync_profile(config_dir, "push"))
+    step(
+        "logged in under this profile (browser OAuth, full account)",
+        logged_in,
+        lambda: _claude(config_dir, "auth", "login"),
+    )
+
+    step(
+        "shared config linked/merged into the profile (the per-profile part of --push)",
+        lambda: (
+            (config_dir / "hooks").is_symlink()
+            and (config_dir / "settings.json").exists()
+        ),
+        lambda: sync_profile(config_dir, "push"),
+    )
 
     def plugins_installed():
         r = _claude(config_dir, "plugin", "list", capture=True)
-        return r.returncode == 0 and "claude-mem@thedotmack" in r.stdout and "ponytail@ponytail" in r.stdout
+        return (
+            r.returncode == 0
+            and "claude-mem@thedotmack" in r.stdout
+            and "ponytail@ponytail" in r.stdout
+        )
 
     def install_plugins():
-        for args in (("marketplace", "add", "thedotmack/claude-mem"),
-                     ("marketplace", "add", "DietrichGebert/ponytail"),
-                     ("install", "claude-mem@thedotmack"),
-                     ("install", "ponytail@ponytail")):
-            _claude(config_dir, "plugin", *args)  # re-adding a marketplace is a no-op error
-    step("claude-mem + ponytail plugins installed in this profile", plugins_installed, install_plugins)
+        for args in (
+            ("marketplace", "add", "thedotmack/claude-mem"),
+            ("marketplace", "add", "DietrichGebert/ponytail"),
+            ("install", "claude-mem@thedotmack"),
+            ("install", "ponytail@ponytail"),
+        ):
+            _claude(
+                config_dir, "plugin", *args
+            )  # re-adding a marketplace is a no-op error
+
+    step(
+        "claude-mem + ponytail plugins installed in this profile",
+        plugins_installed,
+        install_plugins,
+    )
 
     settings = mem_dir / "settings.json"
     changed = []  # steps that wrote something the running worker can't see
@@ -906,18 +1110,26 @@ def new_profile(org, dry_run=False, home=HOME):
         if not settings.exists():
             return False
         d = json.loads(settings.read_text())
-        return d.get("CLAUDE_MEM_DATA_DIR") == str(mem_dir) and \
-            d.get("CLAUDE_MEM_WORKER_PORT") not in (None, str(CLAUDE_MEM_DEFAULT_WORKER_PORT))
+        return d.get("CLAUDE_MEM_DATA_DIR") == str(mem_dir) and d.get(
+            "CLAUDE_MEM_WORKER_PORT"
+        ) not in (None, str(CLAUDE_MEM_DEFAULT_WORKER_PORT))
 
     def isolate_mem():
-        worker, server = allocate_claude_mem_ports(*used_claude_mem_ports(home, exclude=mem_dir))
+        worker, server = allocate_claude_mem_ports(
+            *used_claude_mem_ports(home, exclude=mem_dir)
+        )
         default = home / ".claude-mem" / "settings.json"
         base = json.loads(default.read_text()) if default.exists() else {}
         mem_dir.mkdir(mode=0o700, exist_ok=True)
-        settings.write_text(json.dumps(
-            isolated_claude_mem_settings(base, mem_dir, worker, server), indent=2) + "\n")
+        settings.write_text(
+            json.dumps(
+                isolated_claude_mem_settings(base, mem_dir, worker, server), indent=2
+            )
+            + "\n"
+        )
         changed.append("settings")
         print(f"          worker port {worker}, server port {server}")
+
     step("claude-mem data dir isolated on its own ports", mem_isolated, isolate_mem)
 
     # The .zshrc chpwd hook only exports CLAUDE_CONFIG_DIR/CLAUDE_MEM_DATA_DIR
@@ -944,26 +1156,38 @@ def new_profile(org, dry_run=False, home=HOME):
         except (json.JSONDecodeError, OSError):
             return False
         port = json.loads(settings.read_text()).get("CLAUDE_MEM_WORKER_PORT")
-        return env.get("CLAUDE_CONFIG_DIR") == str(config_dir) and \
-            env.get("CLAUDE_MEM_DATA_DIR") == str(mem_dir) and \
-            env.get("CLAUDE_MEM_WORKER_PORT") == port
+        return (
+            env.get("CLAUDE_CONFIG_DIR") == str(config_dir)
+            and env.get("CLAUDE_MEM_DATA_DIR") == str(mem_dir)
+            and env.get("CLAUDE_MEM_WORKER_PORT") == port
+        )
 
     def isolate_project_env():
         port = json.loads(settings.read_text())["CLAUDE_MEM_WORKER_PORT"]
         existing = json.loads(org_settings.read_text()) if org_settings.exists() else {}
-        merged = deep_merge(existing, {"env": {
-            "CLAUDE_CONFIG_DIR": str(config_dir),
-            "CLAUDE_MEM_DATA_DIR": str(mem_dir),
-            "CLAUDE_MEM_WORKER_PORT": port,
-        }})
+        merged = deep_merge(
+            existing,
+            {
+                "env": {
+                    "CLAUDE_CONFIG_DIR": str(config_dir),
+                    "CLAUDE_MEM_DATA_DIR": str(mem_dir),
+                    "CLAUDE_MEM_WORKER_PORT": port,
+                }
+            },
+        )
         org_settings.parent.mkdir(mode=0o700, exist_ok=True)
         org_settings.write_text(json.dumps(merged, indent=2) + "\n")
 
-    step(f"{org_settings} env fallback for headless/subagent spawns the shell hook misses",
-         project_env_isolated, isolate_project_env)
+    step(
+        f"{org_settings} env fallback for headless/subagent spawns the shell hook misses",
+        project_env_isolated,
+        isolate_project_env,
+    )
 
     def has_cred():
-        return env_file.exists() and bool(CLAUDE_MEM_CRED_RE.search(env_file.read_text()))
+        return env_file.exists() and bool(
+            CLAUDE_MEM_CRED_RE.search(env_file.read_text())
+        )
 
     def write_cred():
         # Claude Code's shell tool runs commands with stdin on /dev/null, so
@@ -971,18 +1195,24 @@ def new_profile(org, dry_run=False, home=HOME):
         # complete and the run hangs until its timeout. A piped token (CI)
         # is a different stdin and still passes.
         if os.path.samestat(os.fstat(0), os.stat(os.devnull)):
-            print("  [needs terminal] no keyboard input here (stdin is /dev/null). Run this "
-                  "in a real terminal tab, or copy your token and write the file yourself:\n"
-                  f"    umask 077; printf 'ANTHROPIC_AUTH_TOKEN=%s\\n' \"$(pbpaste)\" > {env_file}\n"
-                  "  then re-run --new-profile.")
+            print(
+                "  [needs terminal] no keyboard input here (stdin is /dev/null). Run this "
+                "in a real terminal tab, or copy your token and write the file yourself:\n"
+                f"    umask 077; printf 'ANTHROPIC_AUTH_TOKEN=%s\\n' \"$(pbpaste)\" > {env_file}\n"
+                "  then re-run --new-profile."
+            )
             return
         print("\n  ******************************************************************")
         print("  *  claude-mem's OAuth pre-flight reads the DEFAULT profile's login  *")
-        print("  *  unless this file carries a credential. Running                    *")
+        print(
+            "  *  unless this file carries a credential. Running                    *"
+        )
         print(f"  *    CLAUDE_CONFIG_DIR={config_dir} claude setup-token")
         print("  *  now -- finish the browser flow, copy the token it prints, paste  *")
         print("  *  it below (input hidden). Ctrl-C leaves the profile unprotected   *")
-        print("  *  and --status will keep saying so.                                 *")
+        print(
+            "  *  and --status will keep saying so.                                 *"
+        )
         print("  ******************************************************************\n")
         _claude(config_dir, "setup-token")
         token = getpass.getpass("  paste the token: ").strip()
@@ -996,27 +1226,48 @@ def new_profile(org, dry_run=False, home=HOME):
             "# profile's login (see config-sync SKILL.md step 7). Written by\n"
             "# sync.py --new-profile; regenerate with `claude setup-token` when the\n"
             "# pid-guard hook reports AUTH FAILING (tokens last about a year).\n"
-            f"ANTHROPIC_AUTH_TOKEN={token}\n")
+            f"ANTHROPIC_AUTH_TOKEN={token}\n"
+        )
         env_file.chmod(0o600)
         changed.append(".env")
-    step("claude-mem .env credential (keeps billing on THIS profile's account)", has_cred, write_cred)
+
+    step(
+        "claude-mem .env credential (keeps billing on THIS profile's account)",
+        has_cred,
+        write_cred,
+    )
 
     def worker_pids():
         if not settings.exists():
             return []
         port = json.loads(settings.read_text()).get("CLAUDE_MEM_WORKER_PORT")
-        r = subprocess.run(["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"], capture_output=True, text=True)
+        r = subprocess.run(
+            ["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"], capture_output=True, text=True
+        )
         return [int(p) for p in r.stdout.split()]
+
     # A worker that booted before settings/.env changed keeps the old values
     # until it dies; a worker that booted after them is fine where it is.
-    step("running worker has seen the current settings and credential",
-         lambda: not changed or not worker_pids(),
-         lambda: [os.kill(p, 15) for p in worker_pids()])
+    step(
+        "running worker has seen the current settings and credential",
+        lambda: not changed or not worker_pids(),
+        lambda: [os.kill(p, 15) for p in worker_pids()],
+    )
 
-    print("\n  next: open a NEW shell, cd into the work dir, start Claude Code once, then")
-    print("        curl -s localhost:$(python3 -c 'import json;print(json.load(open(\"" + str(settings) + "\"))[\"CLAUDE_MEM_WORKER_PORT\"])')/api/health")
-    print("        must report authMethod 'Gateway auth token' (not 'Claude Code OAuth token').")
-    print("        Optional MCP (linear/lucid/tally) is per profile too -- see SKILL.md step 9.\n")
+    print(
+        "\n  next: open a NEW shell, cd into the work dir, start Claude Code once, then"
+    )
+    print(
+        "        curl -s localhost:$(python3 -c 'import json;print(json.load(open(\""
+        + str(settings)
+        + '"))["CLAUDE_MEM_WORKER_PORT"])\')/api/health'
+    )
+    print(
+        "        must report authMethod 'Gateway auth token' (not 'Claude Code OAuth token')."
+    )
+    print(
+        "        Optional MCP (linear/lucid/tally) is per profile too -- see SKILL.md step 9.\n"
+    )
     check_claude_mem_isolation(home)
 
 
@@ -1058,7 +1309,11 @@ def main():
         new_profile(args[i + 1], dry_run="--dry-run" in args)
         return
     mode = "status"
-    for flag, name in (("--restore", "restore"), ("--push", "push"), ("--pull", "pull")):
+    for flag, name in (
+        ("--restore", "restore"),
+        ("--push", "push"),
+        ("--pull", "pull"),
+    ):
         if flag in args:
             mode = name
     run(mode)

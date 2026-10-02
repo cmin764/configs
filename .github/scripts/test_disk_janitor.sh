@@ -168,7 +168,7 @@ touch -t 197001010000 \
   "$HOME/Work/stale/.venv" "$HOME/Work/stale/.venv/pyvenv.cfg" "$HOME/Work/stale/src.py"
 touch -t 197001010000 "$HOME/.claude/projects/proj/old.jsonl"
 
-BASE_ARGS=(--skip brew,claude-tmp --work-dir "$HOME/Work")
+BASE_ARGS=(--skip "brew,claude-tmp" --work-dir "$HOME/Work")
 snap() { find "$HOME" | wc -l | tr -d ' '; }
 
 echo "--- environment sanity ---"
@@ -178,7 +178,7 @@ uname -m
 
 echo "--- dry run: level 3, nothing touched ---"
 before=$(snap)
-out=$(python3 "$CLEANUP" --level 3 --json "${BASE_ARGS[@]}" 2>&1)
+out=$(python3 "$CLEANUP" --level 3 --json "${BASE_ARGS[@]}" 2>/dev/null)
 after=$(snap)
 [ "$before" = "$after" ] && ok "dry run changed nothing on disk" || fail "dry run changed the tree ($before -> $after)"
 grep -q 'uninstall' "$SHIM_LOG" && fail "dry run ran uv python uninstall" || ok "dry run never uninstalled a uv python"
@@ -204,7 +204,7 @@ assert "shell-snapshots" in targets["claude-cache"]["note"], targets["claude-cac
 PYEOF
 
 echo "--- apply: level 3 + yes ---"
-out=$(python3 "$CLEANUP" --level 3 --apply --yes --json "${BASE_ARGS[@]}" 2>&1)
+out=$(python3 "$CLEANUP" --level 3 --apply --yes --json "${BASE_ARGS[@]}" 2>/dev/null)
 
 # Electron caches gone, siblings survive.
 [ -d "$HOME/Library/Application Support/Claude/Cache" ] && ok "claude-desktop Cache survived (Claude reported running, skipped)" || fail "claude-desktop Cache deleted while Claude was running"
@@ -294,7 +294,7 @@ case "$*" in
 esac
 EOF
 chmod +x "$TMP/bin-down/docker"
-out=$(PATH="$TMP/bin-down:$TMP/bin:$PATH" python3 "$CLEANUP" --level 3 --json --only docker 2>&1)
+out=$(PATH="$TMP/bin-down:$TMP/bin:$PATH" python3 "$CLEANUP" --level 3 --json --only docker 2>/dev/null)
 python3 - "$out" <<'PYEOF' && ok "docker daemon down: reclaimable null, not 0; total_reclaimable still sums" || fail "docker-down JSON check failed"
 import json, sys
 d = json.loads(sys.argv[1])
@@ -312,7 +312,7 @@ echo "--- second apply: now-orphaned 3.14.6 gets caught, expected and correct --
 # first apply, so on this fresh invocation cpython-3.14.6 really is
 # unreferenced now -- this is real orphan detection catching up on the
 # next run, not the same-run cascade the previous section proved is fixed.
-out=$(python3 "$CLEANUP" --level 3 --apply --yes --json "${BASE_ARGS[@]}" 2>&1)
+out=$(python3 "$CLEANUP" --level 3 --apply --yes --json "${BASE_ARGS[@]}" 2>/dev/null)
 [ ! -d "$HOME/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none" ] && ok "3.14.6 now correctly reclaimed on the next run, its venv is truly gone" || fail "3.14.6 unexpectedly survived the second apply"
 [ "$(grep -c 'uninstall cpython-3.14.6-macos-aarch64-none' "$SHIM_LOG")" = "1" ] && ok "exactly one uninstall of 3.14.6 on this run" || fail "unexpected uninstall count for 3.14.6"
 python3 - "$out" <<'PYEOF' && ok "second-apply JSON: total_freed > 0 (the newly-orphaned interpreter)" || fail "second-apply total_freed check failed"
@@ -323,7 +323,7 @@ PYEOF
 
 echo "--- third apply is the true no-op ---"
 before=$(snap)
-out=$(python3 "$CLEANUP" --level 3 --apply --yes --json "${BASE_ARGS[@]}" 2>&1)
+out=$(python3 "$CLEANUP" --level 3 --apply --yes --json "${BASE_ARGS[@]}" 2>/dev/null)
 after=$(snap)
 [ "$before" = "$after" ] && ok "re-apply changed nothing on disk" || fail "re-apply changed the tree ($before -> $after)"
 python3 - "$out" <<'PYEOF' && ok "re-apply JSON: total_freed == 0" || fail "re-apply total_freed check failed"

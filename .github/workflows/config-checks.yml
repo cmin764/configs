@@ -20,6 +20,17 @@ jobs:
           uname -m
           [ "$(uname -m)" = "arm64" ] || { echo "runner is not arm64, macos-latest may have moved"; exit 1; }
 
+      - name: Lint Python (ruff, pinned), shell tests (shellcheck), workflow (actionlint)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lint"
+          "$RUNNER_TEMP/lint/bin/pip" install --quiet ruff==0.16.10
+          "$RUNNER_TEMP/lint/bin/ruff" check .
+          "$RUNNER_TEMP/lint/bin/ruff" format --check .
+          command -v shellcheck >/dev/null || brew install shellcheck
+          shellcheck -S warning .github/scripts/*.sh
+          command -v actionlint >/dev/null || brew install actionlint
+          actionlint .github/workflows/*.yml
+
       - name: Run selftest (verify the checker itself works)
         run: python3 .github/scripts/check_configs.py --selftest
 
