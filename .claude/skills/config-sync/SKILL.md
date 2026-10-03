@@ -20,7 +20,7 @@ order on a bare machine.
 | Kind | Files | Why |
 |---|---|---|
 | **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
-| **Symlink (per Claude profile)** | `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/`, `.claude/skills/` | Same as above, but applied once per Claude Code profile directory: `~/.claude` plus any `~/.claude-<org>` created for per-org account isolation (see restore step 7). A fresh Mac only has `~/.claude`. These are the user's own authored tooling (this repo's skills, hooks, memory files) -- deliberately identical everywhere, unlike plugins/MCP below: there's no personal-vs-work split for skills *you* wrote, only for third-party installs. A project's own `.claude/skills/` (versioned and shared with a team through that project's own repo) is a separate, unrelated layer Claude Code discovers per-project regardless of `CLAUDE_CONFIG_DIR` -- out of scope for this skill entirely, see README's note on skill promotion. |
+| **Symlink (per Claude profile)** | `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/` (and, for `~/.claude` only, `.claude/user/skills/` as `skills`: per-skill links into `ai-tools`) | Same as above, but applied once per Claude Code profile directory: `~/.claude` plus any `~/.claude-<org>` created for per-org account isolation (see restore step 7). A fresh Mac only has `~/.claude`. These are the user's own authored tooling (this repo's skills, hooks, memory files) -- deliberately identical everywhere, unlike plugins/MCP below: there's no personal-vs-work split for skills *you* wrote, only for third-party installs. A project's own `.claude/skills/` (versioned and shared with a team through that project's own repo) is a separate, unrelated layer Claude Code discovers per-project regardless of `CLAUDE_CONFIG_DIR` -- out of scope for this skill entirely, see README's note on skill promotion. |
 | **Not synced, deliberately** | `plugins/` and MCP registrations (`.claude.json`) inside each Claude profile; Codex's `config.toml` `[marketplaces.*]`/`[plugins.*]`/`[projects.*]` blocks | User-scope Claude Code state Claude Code itself keeps per config dir, not per human -- `claude plugin install`/`claude mcp add --scope user` only ever touch whichever `CLAUDE_CONFIG_DIR` is active. Installing a plugin under the personal profile must not make it appear at work and vice versa, so each profile gets its own independent install/registration (step 7's recipe repeats the commands per org) rather than sharing one copy. Costs some duplicate disk for plugins used in both places -- worth it for the isolation. Codex's `config.toml` mixes this same kind of self-managed state (marketplaces, plugin installs, per-project trust) with a handful of genuinely hand-edited scalars (`model`, `[shell_environment_policy]`, `[desktop]` prefs) in one TOML file -- `sync.py` is stdlib-only and has no TOML writer, and splitting the file cleanly would need one, so the whole file is left untracked rather than force a partial fit. `apps/codex/hooks.json` (Codex's actual hand-authored hook wiring, the TOML file's one purely-hand-edited chunk that's easy to isolate) is tracked on its own, same as `.claude/user/settings.json`'s `hooks` block. |
 
 **Where `.claude.json` actually lives is not consistent across profiles, and that's not a bug.**
@@ -269,7 +269,7 @@ from "everything else in the repo gets installed."
    claude-code` then reinstall via the curl command above.
    Install `rtk` (now in homebrew-core: `brew install rtk`; do **not** copy the
    x86_64 binary from an Intel machine's `~/.local/bin/rtk`).
-2. **Clone this repo**: `git clone git@github.com:cmin764/configs.git ~/Work/cmin764/configs`.
+2. **Clone this repo and `ai-tools`** (private, needs `gh auth login` first) side by side: `git clone git@github.com:cmin764/configs.git ~/Work/cmin764/configs` and `git clone git@github.com:cmin764/ai-tools.git ~/Work/cmin764/ai-tools`. The exposed-skill links are relative and dangle without the sibling clone.
 3. **Restore**: `cd ~/Work/cmin764/configs && python3 .claude/skills/config-sync/scripts/sync.py --restore`.
    Any real file already at a symlink target gets backed up to
    `<name>.pre-config-sync.bak` next to it, never silently overwritten.
@@ -569,7 +569,7 @@ from "everything else in the repo gets installed."
    a private repo to confirm the credential helper resolves `gh` via `PATH`
    rather than the Intel-only `/usr/local/bin/gh` this repo used to hardcode.
    Start Claude Code outside this repo and confirm `/disk-janitor`
-   autocompletes (proves the skills symlink worked) and `/status` shows
+   autocompletes (proves the exposed-skills link into `ai-tools` worked; org profiles intentionally list none) and `/status` shows
    `autoMode` active (it's a user-scope key, dead if the settings file ever
    ends up back at project scope).
 12. **GUI apps**, `brew install --cask` for each, one at a time, config file
@@ -687,3 +687,11 @@ special case.
   that's a judgment call, not a mechanical rule, which is why it isn't in CI.
   Do it here, when you're about to `--pull`, by reading the diff `--status`
   prints before deciding to commit it.
+
+## Codex: keep the Claude import off
+
+On a fresh Mac, set `external-agent-import-sync-enabled = false` in `~/.codex/config.toml` (untracked, see the "Not synced" row). With it on, Codex re-imports Claude skills and `CLAUDE.md` into `~/.agents/`, `~/.codex/AGENTS.md` and per-repo `.agents/` and `AGENTS.md` mirrors that go stale and confuse every agent that reads them. Skills and instructions have one source: `.claude/`.
+
+## Exposed skills and `synced/`
+
+`.claude/user/skills/` holds relative links into the sibling `ai-tools/skills/` (disk-janitor, frontend-review, job-fit-assessor, travel-planner). Only `~/.claude` gets the link; org profiles (created for a `~/Work/<org>` dir) get none and a legacy link to the old skills dir is removed on `--restore`. A restore with `ai-tools` not cloned beside this repo leaves dangling links, which `--status` reports. `synced/` in the same dir is Claude Code's claude.ai account-skill cache: machine-generated, git-ignored, a real directory (so never flagged as dangling), not hand-edited.

@@ -55,7 +55,12 @@ CLAUDE_PROFILE_SYMLINKS = [
     (".claude/user/CLAUDE.md", "CLAUDE.md"),
     (".claude/user/RTK.md", "RTK.md"),
     (".claude/user/hooks", "hooks"),
-    (".claude/skills", "skills"),
+]
+# Skills exposed from ai-tools (per-skill relative links inside this dir). Only the
+# default profile links it: org profiles stay empty so a work account never inherits
+# personal tooling, and each work repo links what it needs from ai-tools itself.
+CLAUDE_DEFAULT_ONLY_SYMLINKS = [
+    (".claude/user/skills", "skills"),
 ]
 CLAUDE_PROFILE_MERGES = [
     (".claude/user/settings.json", "settings.json"),
@@ -1271,12 +1276,43 @@ def new_profile(org, dry_run=False, home=HOME):
     check_claude_mem_isolation(home)
 
 
+def check_exposed_skills():
+    """Warn on exposed-skill links whose ai-tools target is missing (ai-tools not
+    cloned as a sibling of this repo)."""
+    skills = repo_path(".claude/user/skills")
+    for link in sorted(skills.iterdir()) if skills.is_dir() else []:
+        if link.is_symlink() and not link.exists():
+            print(f"[dangling]     {link.name} (clone ai-tools next to this repo)")
+
+
+def drop_legacy_skills_link(skills_link, mode):
+    """Org profiles used to link the whole configs skills dir; remove that link
+    (never real data) so they start empty."""
+    if not skills_link.is_symlink():
+        return
+    target = os.readlink(skills_link)
+    if ".claude/skills" not in target:
+        return
+    if mode == "status":
+        print(f"[legacy link]  {skills_link} (--restore/--push removes it)")
+    elif mode in ("restore", "push"):
+        skills_link.unlink()
+        print(f"  removed legacy skills link {skills_link}")
+
+
 def sync_profile(profile_dir, mode):
     """The per-Claude-profile slice of a sync: shared symlinks plus the
     settings merge, for one ~/.claude[-<org>] directory."""
     print(f"-- profile {profile_dir} --")
     for src, rel in CLAUDE_PROFILE_SYMLINKS:
         sync_symlink(src, profile_dir / rel, mode)
+    if profile_dir == HOME / ".claude":
+        for src, rel in CLAUDE_DEFAULT_ONLY_SYMLINKS:
+            sync_symlink(src, profile_dir / rel, mode)
+        if mode == "status":
+            check_exposed_skills()
+    else:
+        drop_legacy_skills_link(profile_dir / "skills", mode)
     for src, rel in CLAUDE_PROFILE_MERGES:
         sync_merge(src, profile_dir / rel, mode)
 

@@ -92,7 +92,7 @@ http-client.private.env.json
 .claude/worktrees/
 .claude/settings.local.json
 
-# Codex-flavored mirror of .claude/skills/, auto-generated
+# Stale Codex import mirrors (Codex external-agent import is disabled; never keep these)
 .agents/
 
 # Mac junk
