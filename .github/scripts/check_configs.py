@@ -65,7 +65,10 @@ def tracked_files():
         text=True,
         check=True,
     )
-    return [REPO_ROOT / p for p in out.stdout.splitlines() if p]
+    # Symlinks (the exposed ai-tools skills) are skipped: their content is owned and
+    # checked by the repo they point into.
+    paths = [REPO_ROOT / p for p in out.stdout.splitlines() if p]
+    return [p for p in paths if not p.is_symlink()]
 
 
 def read_text(path):

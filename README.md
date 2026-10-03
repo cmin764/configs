@@ -69,12 +69,7 @@ the mechanical stuff on every PR (no secrets, no machine-specific paths,
 configs still parse); genuinely judging "hand-edited vs. accumulated noise"
 stays a human-in-the-loop step in the skill, not something CI enforces.
 
-Promoting a skill from a project repo into `.claude/skills/` here is a
-separate, occasional decision -- worth doing when something proves reusable
-across projects, not something to automate into the sync loop. Skills that
-live here are personal, user-authored tooling and stay identical across
-every Claude Code account this machine logs into (personal, any per-org
-profile -- see `config-sync`'s restore step 7); that's different from a
-project's own `.claude/skills/`, which a team shares through that project's
-git history and Claude Code discovers per-project regardless of which
-account is active.
+Reusable skills live in the sibling `ai-tools` repo, not here. This repo keeps
+only `config-sync` (project-scoped). `.claude/user/skills/` links a chosen few
+from `ai-tools` into the personal `~/.claude` profile; org profiles get none, and
+a work repo links what it needs from `ai-tools` in its own `.claude/skills/`.
