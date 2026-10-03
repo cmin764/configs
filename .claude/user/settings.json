@@ -10,6 +10,13 @@
   },
   "permissions": {
     "defaultMode": "auto",
+    "allow": [
+      "Bash(rtk read *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk git *)",
+      "Read(//tmp/**)",
+      "mcp__plugin_claude-mem_mcp-search__*"
+    ],
     "deny": [
       "Bash(git push --force:*)",
       "Bash(gh pr merge:*)",
@@ -105,6 +112,7 @@
     "claude-fable-5": { "effortLevel": "xhigh" },
     "claude-opus-5": { "effortLevel": "high" },
     "claude-sonnet-5": { "effortLevel": "medium" },
+    "claude-sonnet-5-5": { "effortLevel": "medium" },
     "claude-haiku-4-5-20251001": { "effortLevel": "low" }
   },
   "tui": "fullscreen",
