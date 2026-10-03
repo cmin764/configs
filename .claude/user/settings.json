@@ -120,5 +120,6 @@
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": false,
   "skipAutoPermissionPrompt": true,
-  "useAutoModeDuringPlan": true
+  "useAutoModeDuringPlan": true,
+  "syncClaudeAiSkills": false
 }
