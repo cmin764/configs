@@ -188,6 +188,18 @@ def _selftest():
         "deep_merge mutated src"
     )
     assert diff_paths({"a": 1}, {"a": 1}) == []
+
+    # drop_legacy_skills_link removes only links into this repo's own skills.
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        foreign = t / "other" / ".claude" / "skills"
+        foreign.mkdir(parents=True)
+        own_link, foreign_link = t / "own", t / "foreign"
+        own_link.symlink_to(repo_path(".claude/user/skills"))
+        foreign_link.symlink_to(foreign)
+        drop_legacy_skills_link(own_link, "restore")
+        drop_legacy_skills_link(foreign_link, "restore")
+        assert not own_link.is_symlink() and foreign_link.is_symlink()
     assert diff_paths({"a": 1}, {"a": 2}) == ["a: differs"]
 
     # check_claude_mem_isolation against a throwaway HOME: the three states
@@ -1290,8 +1302,9 @@ def drop_legacy_skills_link(skills_link, mode):
     (never real data) so they start empty."""
     if not skills_link.is_symlink():
         return
-    target = os.readlink(skills_link)
-    if ".claude/skills" not in target:
+    # Only our own link is ours to remove; a foreign link is user data.
+    own = repo_path(".claude").resolve()
+    if not skills_link.resolve().is_relative_to(own):
         return
     if mode == "status":
         print(f"[legacy link]  {skills_link} (--restore/--push removes it)")
