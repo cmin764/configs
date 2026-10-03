@@ -71,5 +71,5 @@ stays a human-in-the-loop step in the skill, not something CI enforces.
 
 Reusable skills live in the sibling `ai-tools` repo, not here. This repo keeps
 only `config-sync` (project-scoped). `.claude/user/skills/` links a chosen few
-from `ai-tools` into the personal `~/.claude` profile; org profiles get none, and
+from `ai-tools` into the personal `~/.claude` profile; org profiles get no skill symlinks (Claude Code may still create a runtime `skills/synced/` cache there, not managed here), and
 a work repo links what it needs from `ai-tools` in its own `.claude/skills/`.

@@ -10,7 +10,7 @@ Reusable skills live in the sibling `ai-tools` repo (`skills/`). They are not co
 
 ## Exposed skills
 
-`.claude/user/skills/` holds per-skill relative symlinks into `ai-tools/skills/`. `sync.py` links that directory as `~/.claude/skills` for the default (personal) profile only. Org profiles (`~/.claude-<org>`) get no global skills; a work repo links what it needs from ai-tools itself.
+`.claude/user/skills/` holds per-skill relative symlinks into `ai-tools/skills/`. `sync.py` links that directory as `~/.claude/skills` for the default (personal) profile only. Org profiles (`~/.claude-<org>`) get no skill symlinks (Claude Code may still create a runtime `skills/synced/` cache there for claude.ai-synced skills; it is not managed here); a work repo links what it needs from ai-tools itself.
 
 ```bash
 # expose another skill to the personal profile
