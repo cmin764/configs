@@ -246,6 +246,31 @@ def check_em_dashes(files, findings):
                 )
 
 
+MODEL_OVERRIDE_VARS = re.compile(
+    r"CLAUDE_CODE_(SUBAGENT_MODEL(_FORCE)?|EFFORT_LEVEL)"
+)
+
+
+def check_model_overrides(files, findings):
+    """These env vars override every subagent/team definition's own model and
+    effort, so they must never be set. Only settings and shell files are
+    scanned: docs may mention the names to warn against them."""
+    for path in files:
+        if path == SELF or not (
+            path.name.startswith("settings") or is_shell_file(path)
+        ):
+            continue
+        text = read_text(path)
+        if text is None:
+            continue
+        for i, line in enumerate(text.split("\n"), start=1):
+            if MODEL_OVERRIDE_VARS.search(line):
+                findings.append(
+                    f"{path.relative_to(REPO_ROOT)}:{i}: sets a model/effort "
+                    f"override env var, it would defeat per-agent model and effort"
+                )
+
+
 def check_junk(files, findings):
     # Name-pattern matching only: a mechanical rule, not a judgment call.
     # Whether a large file is genuinely hand-edited vs. accumulated noise is
@@ -296,6 +321,20 @@ def _selftest():
         finally:
             REPO_ROOT = original_root
         assert len(findings) == 1 and "bad.md" in findings[0], findings
+    # check_model_overrides: a settings file setting the var is flagged.
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        bad = tmp_path / "settings.json"
+        bad.write_text('{"env": {"CLAUDE_CODE_SUBAGENT_MODEL": "haiku"}}\n')
+        doc = tmp_path / "notes.md"
+        doc.write_text("keep CLAUDE_CODE_SUBAGENT_MODEL unset\n")
+        REPO_ROOT = tmp_path
+        try:
+            findings = []
+            check_model_overrides([bad, doc], findings)
+        finally:
+            REPO_ROOT = original_root
+        assert len(findings) == 1 and "settings.json" in findings[0], findings
     print("selftest ok")
 
 
@@ -313,6 +352,7 @@ def main():
     check_single_arch_brew(files, findings)
     check_junk(files, findings)
     check_em_dashes(files, findings)
+    check_model_overrides(files, findings)
 
     if findings:
         print(f"{len(findings)} finding(s):\n")
