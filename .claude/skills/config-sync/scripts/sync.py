@@ -253,6 +253,23 @@ def _selftest():
     r = isolation_report(isolated, True, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\n")
     assert "[LEAK RISK]    default profile" in r, r
 
+    # check_model_overrides: flags the env var in a profile, passes when clean.
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        (home / ".claude-org").mkdir()
+        (home / ".claude-org" / "settings.json").write_text(
+            '{"env": {"CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"}}'
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            check_model_overrides(home)
+        assert "[LEAK RISK]" in out.getvalue(), out.getvalue()
+        (home / ".claude-org" / "settings.json").write_text("{}")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            check_model_overrides(home)
+        assert "LEAK" not in out.getvalue(), out.getvalue()
+
     # --new-profile's pure parts: port blocks skip whatever any profile uses,
     # and the isolated settings touch exactly the six colliding keys.
     d, off = CLAUDE_MEM_DEFAULT_WORKER_PORT, CLAUDE_MEM_SERVER_PORT_OFFSET
@@ -1288,6 +1305,37 @@ def new_profile(org, dry_run=False, home=HOME):
     check_claude_mem_isolation(home)
 
 
+MODEL_OVERRIDE_RE = re.compile(
+    r"CLAUDE_CODE_(SUBAGENT_MODEL(_FORCE)?|EFFORT_LEVEL)"
+    r"|^\s*(alias|function)\b.*\bclaude\b.*--(model|effort)\b",
+    re.MULTILINE,
+)
+
+
+def check_model_overrides(home=HOME):
+    """Flag anything on the live machine that would override every agent
+    charter's own model and effort: the env vars in any profile's settings
+    or shell rc, or a claude alias that pins --model/--effort. CI only sees
+    tracked files, so an untracked profile settings file is caught here."""
+    candidates = [d / "settings.json" for d in home.glob(".claude*") if d.is_dir()]
+    candidates += [
+        home / n for n in (".zprofile", ".zshrc", ".zshenv", ".zprofile.local")
+    ]
+    hits = []
+    for path in candidates:
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        for m in MODEL_OVERRIDE_RE.finditer(text):
+            hits.append(f"{path}: {m.group(0).strip()[:60]}")
+    if hits:
+        for h in hits:
+            print(f"[LEAK RISK]    model/effort override -- {h}")
+    else:
+        print("[isolated]     no model/effort override in any profile or shell rc")
+
+
 def check_exposed_skills():
     """Warn on exposed-skill links whose ai-tools target is missing (ai-tools not
     cloned as a sibling of this repo)."""
@@ -1344,6 +1392,7 @@ def run(mode):
         sync_trimmed(src, dst, drop_keys, mode)
     if mode == "status":
         check_claude_mem_isolation()
+        check_model_overrides()
 
 
 def main():

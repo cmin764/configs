@@ -191,6 +191,8 @@ python3 .claude/skills/config-sync/scripts/sync.py --selftest  # deep_merge/diff
 python3 .claude/skills/config-sync/scripts/sync.py --new-profile <org> [--dry-run]  # step 7, executable
 ```
 
+`--status` also flags any model/effort override env var (or a `claude` alias pinning `--model`/`--effort`) in a live profile's settings or shell rc, since CI only sees tracked files.
+
 All of them are idempotent. `--status` never writes anything; run it first.
 It also flags any `~/.claude-mem-<org>` profile still sharing its data
 dir, worker port, or server-url with the default profile as `[LEAK RISK]`
