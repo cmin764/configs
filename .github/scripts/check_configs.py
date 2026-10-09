@@ -246,9 +246,7 @@ def check_em_dashes(files, findings):
                 )
 
 
-MODEL_OVERRIDE_VARS = re.compile(
-    r"CLAUDE_CODE_(SUBAGENT_MODEL(_FORCE)?|EFFORT_LEVEL)"
-)
+MODEL_OVERRIDE_VARS = re.compile(r"CLAUDE_CODE_(SUBAGENT_MODEL(_FORCE)?|EFFORT_LEVEL)")
 
 
 def check_model_overrides(files, findings):
