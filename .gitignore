@@ -3,3 +3,4 @@
 __pycache__/
 *.pyc
 .claude/user/skills/synced/
+.claude/user/skills/.trash/
