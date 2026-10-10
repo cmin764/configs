@@ -94,7 +94,7 @@ question that unblocks work), optimise for their ability to act, not for showing
   - Sonnet, low/medium effort: executing an agreed plan, coding tasks, straight codegen against a clear spec.
   - Opus, high/xhigh effort: architecting solutions, self-reviewing produced changes from multiple angles to surface issues the author's own view would miss.
   - Fable, xhigh effort: driving the initial planning, orchestration design for how the whole change gets executed. Reach for it sparingly, only for the genuine aha-moment calls that then steer the rest of the work.
-- Teammates inherit the lead's effort level and ignore their own `effort:` field entirely; charter `effort:` only ever applies to a plain subagent, so set the lead's effort level before the first spawn of a run if it needs to differ from the default.
+- Teammates default to the lead's effort level. A charter's `effort:` is documented as honored for teammates but was reported dropped through 2.1.286 (bug #80569) and is unconfirmed in real team runs (a headless probe on 2.1.296 honored it). Don't rely on it: set the lead's effort level before the first spawn of a run if it needs to differ from the default, and use a plain subagent when a role's effort must hold. A charter's `model:` is honored.
 - `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_CODE_SUBAGENT_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` should stay unset: any of them overrides every definition's own `effort:`/`model:`.
 - Exploration and code-search sub-agents (Explore, general-purpose lookups) run on Sonnet at low/medium effort by default; only escalate to Opus when the sub-agent itself is making a design call, not just retrieving.
 
