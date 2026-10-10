@@ -250,9 +250,11 @@ MODEL_OVERRIDE_VARS = re.compile(r"CLAUDE_CODE_(SUBAGENT_MODEL(_FORCE)?|EFFORT_L
 
 
 def check_model_overrides(files, findings):
-    """These env vars override every subagent/team definition's own model and
-    effort, so they must never be set. Only settings and shell files are
-    scanned: docs may mention the names to warn against them."""
+    """The effort var and the model FORCE var override every subagent/team
+    definition's own effort and model; the plain model var silently picks the
+    model wherever no definition or spawn names one. None may be set. Only
+    settings and shell files are scanned: docs may mention the names to warn
+    against them."""
     for path in files:
         if path == SELF or not (
             path.name.startswith("settings") or is_shell_file(path)

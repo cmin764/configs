@@ -1313,8 +1313,8 @@ MODEL_OVERRIDE_RE = re.compile(
 
 
 def check_model_overrides(home=HOME):
-    """Flag anything on the live machine that would override every agent
-    charter's own model and effort: the env vars in any profile's settings
+    """Flag anything on the live machine that would override or silently
+    replace an agent charter's own model and effort: the env vars in any profile's settings
     or shell rc, or a claude alias that pins --model/--effort. CI only sees
     tracked files, so an untracked profile settings file is caught here."""
     candidates = [d / "settings.json" for d in home.glob(".claude*") if d.is_dir()]
