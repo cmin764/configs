@@ -27,34 +27,16 @@ fi
 # could themselves be stale.
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SETTINGS="$MEM_DIR/settings.json"
-ACCOUNT="${USER:-$(id -un)}"
 
-# claude-mem's OAuth pre-flight (worker-service.cjs, the darwin branch of its
-# keychain reader) looks up the Keychain service "Claude Code-credentials"
-# with NO config-dir hash suffix -- that name is always the DEFAULT profile's
-# login; org profiles live under "Claude Code-credentials-<sha256 prefix>".
-# Whatever it finds there it injects as CLAUDE_CODE_OAUTH_TOKEN into every
-# SDK child, and Claude Code honours that env var over its own per-profile
-# Keychain lookup. So a logged-in default profile silently pays for every
-# org profile's memory generation, regardless of ports, data dirs, or a
-# correct CLAUDE_CONFIG_DIR. No claude-mem setting disables the pre-flight
-# (the only mechanical escape is an API key in <data-dir>/.env), so until
-# it's fixed upstream the default profile must stay logged out while any
-# org profile runs claude-mem. This makes a violation loud on the next
-# prompt instead of invisible on the next invoice.
-#
-# The pre-flight returns BEFORE the Keychain lookup when <data-dir>/.env (or
-# CLAUDE_MEM_ENV_FILE) carries ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or
-# ANTHROPIC_BASE_URL -- verified 2026-08-28 with a `claude setup-token` value
-# as ANTHROPIC_AUTH_TOKEN: real observations stored, and a planted default
-# login was ignored. With such a credential the default profile may log in.
+# Billing: since 13.28 claude-mem's OAuth pre-flight reads the Keychain entry
+# of the config dir it resolves (CLAUDE_MEM_CLAUDE_CONFIG_DIR, else the
+# spawning env's CLAUDE_CONFIG_DIR), "Claude Code-credentials-<sha256[:8]>",
+# the same entry Claude Code itself uses for that profile. Only a worker that
+# resolves to the default ~/.claude reads the unsuffixed, default login, and
+# its /api/health says so as "profile=default" in ai.authMethod (checked
+# below, live, instead of guessing from the Keychain). A credential in
+# <data-dir>/.env (or CLAUDE_MEM_ENV_FILE) skips the lookup altogether.
 ENV_FILE="${CLAUDE_MEM_ENV_FILE:-$MEM_DIR/.env}"
-env_cred=0
-[ -f "$ENV_FILE" ] && grep -qE '^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL)=.+' "$ENV_FILE" && env_cred=1
-if [ "$env_cred" = 0 ] && [ "$CONFIG_DIR" != "$HOME/.claude" ] && \
-   security find-generic-password -s "Claude Code-credentials" -a "$ACCOUNT" >/dev/null 2>&1; then
-  echo "claude-mem: LEAK RISK -- the default profile (~/.claude) is logged in and $ENV_FILE carries no credential. claude-mem reads that unsuffixed Keychain entry at worker spawn and injects it into its SDK calls, so THIS org profile's memory generation bills the DEFAULT account. Either put this org's own ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY in $ENV_FILE, or run: CLAUDE_CONFIG_DIR=~/.claude claude auth logout -- then restart this profile's claude-mem worker." >&2
-fi
 
 # The price of an .env credential is that it can expire (setup-tokens do,
 # after about a year) and nothing upstream says so -- memory generation just
@@ -102,8 +84,10 @@ port="${CLAUDE_MEM_WORKER_PORT:-}"
 
 # The worker's /api/health reports workerPath=__filename, which lives under
 # <profile>/plugins/cache/ -- a fingerprint of which profile spawned it that
-# no stale env var can fake -- plus ai.authMethod, which says "(env, ...)"
-# only when the pre-flight above actually injected a token.
+# no stale env var can fake -- plus ai.authMethod, whose "profile=<name>"
+# suffix (13.28 and 14.x alike) names the Keychain login it reads. "(env"
+# in that string only means the worker inherited a CLAUDE_CODE_OAUTH_TOKEN
+# fallback, which says nothing about whose login won.
 health=$(curl -s --max-time 1 "http://127.0.0.1:$port/api/health" 2>/dev/null)
 if [ -n "$health" ]; then
   worker_path=$(printf '%s' "$health" | grep -o '"workerPath":"[^"]*"' | cut -d'"' -f4)
@@ -113,8 +97,8 @@ if [ -n "$health" ]; then
       echo "claude-mem: MISMATCH -- the worker on port $port belongs to a different profile ($worker_path), not $CONFIG_DIR. It authenticated at ITS spawn time under that other profile's account; this session's memory writes may be billing/isolated wrong until fixed. See SKILL.md's claude-mem isolation block." >&2
       ;;
   esac
-  if [ "$CONFIG_DIR" != "$HOME/.claude" ] && printf '%s' "$health" | grep -q '"authMethod":"Claude Code OAuth token (env'; then
-    echo "claude-mem: LEAK ACTIVE -- the worker on port $port is running with an injected OAuth token, i.e. the DEFAULT profile's login, not this org profile's. Kill it (kill $(printf '%s' "$health" | grep -o '"pid":[0-9]*' | grep -o '[0-9]*')) after logging the default profile out; it respawns clean on the next prompt." >&2
+  if [ "$CONFIG_DIR" != "$HOME/.claude" ] && printf '%s' "$health" | grep -q '"authMethod":"Claude Code OAuth token [^"]* profile=default"'; then
+    echo "claude-mem: LEAK ACTIVE -- the worker on port $port reads the DEFAULT profile's login (authMethod profile=default), not $CONFIG_DIR's: it was spawned without this profile's CLAUDE_CONFIG_DIR, or $SETTINGS sets CLAUDE_MEM_CLAUDE_CONFIG_DIR to ~/.claude. Fix that, then kill it (kill $(printf '%s' "$health" | grep -o '"pid":[0-9]*' | grep -o '[0-9]*')); it respawns from this session's env on the next prompt." >&2
   fi
 fi
 

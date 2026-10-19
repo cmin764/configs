@@ -209,8 +209,8 @@ worker process from before a settings fix, or a port collision that
 happens transiently between two profiles' cold starts. Both guards have
 tests CI runs on every push: `--selftest` drives the `--status` check
 against a throwaway HOME, and `.github/scripts/test_claude_mem_pid_guard.sh`
-runs the real hook with `security`/`curl` replaced by PATH shims, one case
-per leak state (default logged in, foreign worker, injected token, auth
+runs the real hook with `curl` replaced by a PATH shim, one case per leak
+state (foreign worker, worker on the default login for 13.28 and 14.x, auth
 failure in the log, stale pidfile, port resolution order), and
 `.github/scripts/test_new_profile.sh` runs `--new-profile` end to end in a
 throwaway HOME with a shimmed `claude` (dry run creates nothing, real run
@@ -395,9 +395,10 @@ from "everything else in the repo gets installed."
       zsh invocation] -> `.zprofile` [login only] -> `.zshrc` [interactive
       only]), and most headless spawns are neither, or don't go through a
       shell at all.
-   7. **`~/.claude-mem-<org>/.env` with a setup-token** -- the step the
-      script shouts about, because it needs a browser round-trip and
-      skipping it is the actual leak. Mechanism below.
+   7. **`~/.claude-mem-<org>/.env` with a setup-token** -- optional since
+      claude-mem 13.28 (Ctrl-C skips it), kept because it pins billing to
+      the org even for a worker spawned without the org's config dir.
+      Mechanism below.
    8. If steps 5, 6, or 7 wrote anything this run, a worker still holding the
       org's port is killed so the next prompt respawns it with the new
       settings and credential; a worker that already booted on them is
@@ -408,25 +409,27 @@ from "everything else in the repo gets installed."
    `~/Work/<Org>`, so nothing else needs configuring -- but only a *new*
    shell picks that up, see the end of this step.
 
-   **Ports and data dirs isolate the data, not the billing.** Where a
-   worker's SDK calls get billed is decided by what OAuth token its `claude`
-   child ends up with, and claude-mem's pre-flight gets that wrong for org
-   profiles: the darwin branch of its keychain reader (in
-   `worker-service.cjs`) runs `security find-generic-password -s "Claude
-   Code-credentials"` -- the **unsuffixed** service name, which is always the
-   default `~/.claude` login (Claude Code stores org profiles under `Claude
-   Code-credentials-<sha256(CLAUDE_CONFIG_DIR)[:8]>`, confirmed by inspecting
-   the keychain on 2026-08-28). Whatever it finds there it injects as
-   `CLAUDE_CODE_OAUTH_TOKEN` into every SDK child, and Claude Code honours
-   that env var over its own per-profile keychain lookup. Net effect: a
-   logged-in default profile silently pays for *every* org profile's memory
-   generation, with perfect port/data-dir isolation and a correct
-   `CLAUDE_CONFIG_DIR`. When the default profile is logged out the lookup
-   fails, claude-mem "proceeds without token", and the `claude` child does
-   its own suffixed lookup -- correct, but only by absence. No claude-mem
-   setting disables the pre-flight, but a credential in
-   `~/.claude-mem-<org>/.env` makes it return *before* the keychain lookup.
-   Two credentials work there:
+   **Ports and data dirs isolate the data; the config dir decides the
+   billing.** Before every SDK spawn claude-mem's OAuth pre-flight reads a
+   Keychain login and injects it as `CLAUDE_CODE_OAUTH_TOKEN`. Older
+   releases always read the **unsuffixed** `Claude Code-credentials` entry
+   (the default `~/.claude` login), so a logged-in default profile paid for
+   every org's memory generation (confirmed 2026-08-28). 13.28.0 and 14.x
+   read the entry of the config dir they resolve instead
+   (`CLAUDE_MEM_CLAUDE_CONFIG_DIR` in the org's claude-mem settings, else
+   the spawning env's `CLAUDE_CONFIG_DIR`): `Claude
+   Code-credentials-<sha256(dir)[:8]>`, the same entry Claude Code uses
+   for that profile (verified 2026-10-19 by reading both bundles' keychain
+   reader). 14.x also falls back to `<config dir>/.credentials.json`. So
+   an org worker bills its own login as long as it was spawned with that
+   profile's `CLAUDE_CONFIG_DIR`, which step 6 and the shell hook
+   guarantee. The live tell is `/api/health`'s `ai.authMethod`: it ends
+   in `profile=<config dir name>` for an org, and `profile=default` means
+   the worker is on the default login. An `.env` credential is now
+   optional; it still pins billing regardless of how the worker was
+   spawned, because a credential in `~/.claude-mem-<org>/.env` makes the
+   pre-flight return *before* the keychain lookup. Two credentials work
+   there:
    - **`ANTHROPIC_AUTH_TOKEN=<output of CLAUDE_CONFIG_DIR=~/.claude-<org>
      claude setup-token>`** -- keeps billing on the org's Claude
      subscription. Verified 2026-08-28: the worker reported
@@ -467,26 +470,23 @@ from "everything else in the repo gets installed."
    `ANTHROPIC_API_KEY=...` there by hand before running it and the step
    reports `[done]`. Either way, after the first prompt in a new shell,
    `curl -s localhost:<port>/api/health` must report a "Gateway auth token"
-   (or "API key") auth method rather than "Claude Code OAuth token".
+   (or "API key") auth method with `.env`, or an OAuth one ending in
+   `profile=.claude-<org>` without it -- never `profile=default`.
 
-   **Policy until it's fixed upstream: every org profile that runs
-   claude-mem either carries its own `.env` credential, or the default
-   profile stays logged out** (`CLAUDE_CONFIG_DIR=~/.claude claude auth
-   logout`). Two guards make a violation loud instead of silent, and both
-   know about `.env`: `sync.py --status` prints `[isolated] .../.env carries
-   its own credential` per protected org and `[LEAK RISK]` when the
-   unsuffixed keychain entry exists alongside an unprotected one;
-   `claude-mem-pid-guard.sh` re-checks both on every prompt and additionally
-   reads the live worker's `/api/health` `ai.authMethod` -- "(env, ...)"
-   there means a default-profile token was actually injected, and the hook
-   names the PID to kill.
+   `sync.py --status` prints `[isolated] .../.env carries its own
+   credential` per org that has one; it no longer checks the Keychain,
+   since on 13.28+ a logged-in default profile is not a leak by itself.
+   `claude-mem-pid-guard.sh` checks the live worker on every prompt: an
+   org worker whose `ai.authMethod` ends in `profile=default` prints
+   `LEAK ACTIVE` with the PID to kill. (`(env, ...)` in that string only
+   means the worker inherited a `CLAUDE_CODE_OAUTH_TOKEN` fallback; it says
+   nothing about whose login won.)
 
    `--new-profile` always installs claude-mem and ponytail; an org that
    wants neither is a manual variant (steps 1-3 by hand), not a flag.
    `--status` keeps checking the result afterwards: `[LEAK RISK]` for a
-   `~/.claude-mem-<org>` still sharing the default's data dir/port/server-url,
-   or one without an `.env` credential while the default profile is logged
-   in. If this org needs `tally`/`linear`/`lucid` MCP too, repeat the
+   `~/.claude-mem-<org>` still sharing the default's data dir/port/server-url.
+   If this org needs `tally`/`linear`/`lucid` MCP too, repeat the
    commands in step 9 with the same `CLAUDE_CONFIG_DIR=~/.claude-<org>`
    prefix -- also per profile, for the same reason.
 

@@ -50,9 +50,9 @@ export DISABLE_AUTOUPDATER=1
 # paired ~/.claude-mem-<org> dir on its own ports. Both dirs matter:
 # claude-mem's worker is a machine-wide singleton keyed by port, so two
 # profiles on the default port share one worker (its data dir and account),
-# and claude-mem's OAuth pre-flight reads the DEFAULT profile's login
-# regardless of CLAUDE_CONFIG_DIR unless ~/.claude-mem-<org>/.env carries the
-# org's own credential -- see config-sync's SKILL.md step 7.
+# and claude-mem bills whichever login the exported CLAUDE_CONFIG_DIR names
+# (13.28+), so a worker spawned without it falls back to the DEFAULT login --
+# see config-sync's SKILL.md step 7.
 _claude_config_dir_by_pwd() {
     case "$PWD" in
         "$HOME"/Work/*)
