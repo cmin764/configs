@@ -872,7 +872,7 @@ def check_claude_mem_isolation(home=HOME):
     org_dirs = [
         d for d in sorted(home.glob(".claude-mem-*")) if (d / "settings.json").exists()
     ]
-    # No Keychain check here: since claude-mem 13.28 an org worker reads its
+    # No Keychain check here: on claude-mem 14.x an org worker reads its
     # own profile's hashed Keychain entry, never the default login, unless
     # it was spawned without that profile's config dir -- which only the live
     # worker can tell, so the pid-guard hook checks it per prompt instead.
@@ -1188,7 +1188,7 @@ def new_profile(org, dry_run=False, home=HOME):
             )
             return
         print("\n  ******************************************************************")
-        print("  *  Optional since claude-mem 13.28 (it reads this profile's login). *")
+        print("  *  Optional on claude-mem 14.x (it reads this profile's login). *")
         print("  *  A credential here pins its billing even if the worker spawns     *")
         print("  *  without this profile's config dir. Running                       *")
         print(f"  *    CLAUDE_CONFIG_DIR={config_dir} claude setup-token")

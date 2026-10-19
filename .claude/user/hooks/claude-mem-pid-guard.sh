@@ -28,7 +28,7 @@ fi
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SETTINGS="$MEM_DIR/settings.json"
 
-# Billing: since 13.28 claude-mem's OAuth pre-flight reads the Keychain entry
+# Billing: on 14.x claude-mem's OAuth pre-flight reads the Keychain entry
 # of the config dir it resolves (CLAUDE_MEM_CLAUDE_CONFIG_DIR, else the
 # spawning env's CLAUDE_CONFIG_DIR), "Claude Code-credentials-<sha256[:8]>",
 # the same entry Claude Code itself uses for that profile. Only a worker that
@@ -85,7 +85,7 @@ port="${CLAUDE_MEM_WORKER_PORT:-}"
 # The worker's /api/health reports workerPath=__filename, which lives under
 # <profile>/plugins/cache/ -- a fingerprint of which profile spawned it that
 # no stale env var can fake -- plus ai.authMethod, whose "profile=<name>"
-# suffix (13.28 and 14.x alike) names the Keychain login it reads. "(env"
+# suffix (14.x, verified in the bundle) names the Keychain login it reads. "(env"
 # in that string only means the worker inherited a CLAUDE_CODE_OAUTH_TOKEN
 # fallback, which says nothing about whose login won.
 health=$(curl -s --max-time 1 "http://127.0.0.1:$port/api/health" 2>/dev/null)

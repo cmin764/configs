@@ -210,7 +210,7 @@ happens transiently between two profiles' cold starts. Both guards have
 tests CI runs on every push: `--selftest` drives the `--status` check
 against a throwaway HOME, and `.github/scripts/test_claude_mem_pid_guard.sh`
 runs the real hook with `curl` replaced by a PATH shim, one case per leak
-state (foreign worker, worker on the default login for 13.28 and 14.x, auth
+state (foreign worker, worker on the default login for 14.x, auth
 failure in the log, stale pidfile, port resolution order), and
 `.github/scripts/test_new_profile.sh` runs `--new-profile` end to end in a
 throwaway HOME with a shimmed `claude` (dry run creates nothing, real run
@@ -396,7 +396,7 @@ from "everything else in the repo gets installed."
       only]), and most headless spawns are neither, or don't go through a
       shell at all.
    7. **`~/.claude-mem-<org>/.env` with a setup-token** -- optional since
-      claude-mem 13.28 (Ctrl-C skips it), kept because it pins billing to
+      claude-mem 14.x (Ctrl-C skips it), kept because it pins billing to
       the org even for a worker spawned without the org's config dir.
       Mechanism below.
    8. If steps 5, 6, or 7 wrote anything this run, a worker still holding the
@@ -414,7 +414,7 @@ from "everything else in the repo gets installed."
    Keychain login and injects it as `CLAUDE_CODE_OAUTH_TOKEN`. Older
    releases always read the **unsuffixed** `Claude Code-credentials` entry
    (the default `~/.claude` login), so a logged-in default profile paid for
-   every org's memory generation (confirmed 2026-08-28). 13.28.0 and 14.x
+   every org's memory generation (confirmed 2026-08-28). 14.x
    read the entry of the config dir they resolve instead
    (`CLAUDE_MEM_CLAUDE_CONFIG_DIR` in the org's claude-mem settings, else
    the spawning env's `CLAUDE_CONFIG_DIR`): `Claude
@@ -475,7 +475,7 @@ from "everything else in the repo gets installed."
 
    `sync.py --status` prints `[isolated] .../.env carries its own
    credential` per org that has one; it no longer checks the Keychain,
-   since on 13.28+ a logged-in default profile is not a leak by itself.
+   since on 14.x a logged-in default profile is not a leak by itself.
    `claude-mem-pid-guard.sh` checks the live worker on every prompt: an
    org worker whose `ai.authMethod` ends in `profile=default` prints
    `LEAK ACTIVE` with the PID to kill. (`(env, ...)` in that string only

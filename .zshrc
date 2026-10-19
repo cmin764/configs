@@ -51,7 +51,7 @@ export DISABLE_AUTOUPDATER=1
 # claude-mem's worker is a machine-wide singleton keyed by port, so two
 # profiles on the default port share one worker (its data dir and account),
 # and claude-mem bills whichever login the exported CLAUDE_CONFIG_DIR names
-# (13.28+), so a worker spawned without it falls back to the DEFAULT login --
+# (14.x), so a worker spawned without it falls back to the DEFAULT login --
 # see config-sync's SKILL.md step 7.
 _claude_config_dir_by_pwd() {
     case "$PWD" in
