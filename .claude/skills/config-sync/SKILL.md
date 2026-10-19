@@ -272,11 +272,13 @@ from "everything else in the repo gets installed."
    `DISABLE_AUTOUPDATER` also freezes plugins, which is how claude-mem sat
    on a broken 13.28.0 for weeks after upstream fixed it. So the template
    sets `FORCE_AUTOUPDATE_PLUGINS: "1"` plus `autoUpdate: true` on both
-   marketplaces: the CLI stays pinned, plugins follow upstream. Manual
-   catch-up per profile: `CLAUDE_CONFIG_DIR=<dir> claude plugin marketplace
-   update && claude plugin update claude-mem@thedotmack`, then restart the
-   profile's worker (kill the pid in `<mem dir>/worker.pid`), since a
-   running worker keeps executing the old version's files.
+   marketplaces: the CLI stays pinned, plugins follow upstream (this includes
+   `claude-plugins-official`, which auto-updates by default once the freeze
+   is lifted). Manual catch-up per profile: `export CLAUDE_CONFIG_DIR=<dir>`
+   first, then `claude plugin marketplace update` and `claude plugin update
+   claude-mem@thedotmack` (a one-line `VAR=x cmd1 && cmd2` prefix reaches
+   only the first command). Then restart that profile's Claude Code
+   sessions: claude-mem kills a version-mismatched worker on its own.
    Install `rtk` (now in homebrew-core: `brew install rtk`; do **not** copy the
    x86_64 binary from an Intel machine's `~/.local/bin/rtk`).
 2. **Clone this repo and `ai-tools`** (private, needs `gh auth login` first) side by side: `git clone git@github.com:cmin764/configs.git ~/Work/cmin764/configs` and `git clone git@github.com:cmin764/ai-tools.git ~/Work/cmin764/ai-tools`. The exposed-skill links are relative and dangle without the sibling clone.
