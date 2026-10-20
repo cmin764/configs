@@ -43,7 +43,7 @@ jobs:
       - name: iTerm2 profile sync end to end (throwaway HOME and git repo, synthetic plist)
         run: bash .github/scripts/test_iterm2_sync.sh
 
-      - name: claude-mem-pid-guard hook (shimmed security/curl, every leak state)
+      - name: claude-mem-pid-guard hook (shimmed curl, every leak state)
         run: bash .github/scripts/test_claude_mem_pid_guard.sh
 
       - name: sync.py --new-profile end to end (throwaway HOME, shimmed claude)

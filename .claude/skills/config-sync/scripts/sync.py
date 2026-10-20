@@ -157,6 +157,28 @@ def deep_merge(dest, src):
     return result
 
 
+def drop_superseded_hooks(live, repo):
+    """Live settings minus the user-owned hook groups the template re-declares
+    by matcher, so an edited template hook replaces its old self instead of
+    running twice next to it. iTerm2's groups and matchers the template does
+    not mention are left alone."""
+    live_hooks = live.get("hooks")
+    if not live_hooks:
+        return live
+    kept = {}
+    for event, groups in live_hooks.items():
+        owned = {g.get("matcher") for g in repo.get("hooks", {}).get(event, [])}
+        kept[event] = [
+            g
+            for g in groups
+            if g.get("matcher") not in owned
+            or any(
+                ITERM2_HOOK_MARKER in h.get("command", "") for h in g.get("hooks", [])
+            )
+        ]
+    return {**live, "hooks": kept}
+
+
 def diff_paths(dest, src, prefix=""):
     """List dotted paths present in src whose value differs from dest."""
     out = []
@@ -188,6 +210,17 @@ def _selftest():
         "deep_merge mutated src"
     )
     assert diff_paths({"a": 1}, {"a": 1}) == []
+
+    # drop_superseded_hooks: an edited template group replaces its old self,
+    # while iTerm2's groups and unrelated matchers survive the merge.
+    old = {"hooks": [{"command": "old"}], "matcher": "Bash"}
+    itm = {"hooks": [{"command": f"x/{ITERM2_HOOK_MARKER}"}], "matcher": "Bash"}
+    other = {"hooks": [{"command": "mine"}], "matcher": "Edit"}
+    new = {"hooks": [{"command": "new"}], "matcher": "Bash"}
+    live = {"hooks": {"PreToolUse": [old, itm, other]}}
+    repo = {"hooks": {"PreToolUse": [new]}}
+    got = deep_merge(drop_superseded_hooks(live, repo), repo)["hooks"]["PreToolUse"]
+    assert got == [itm, other, new], got
 
     # drop_legacy_skills_link removes only links into this repo's own skills.
     with tempfile.TemporaryDirectory() as tmp:
@@ -464,6 +497,8 @@ def sync_copy(src_rel, dst_rel, mode):
             print(f"[differs]      {dst_rel}")
         return
     if mode in ("restore", "push"):
+        if dst.exists() and dst.read_bytes() != src.read_bytes():
+            backup_if_real_file(dst)  # live edits made in the app survive a push
         ensure_parent(dst)
         shutil.copy2(src, dst)
         print(f"  wrote {dst_rel}")
@@ -560,7 +595,7 @@ def sync_merge(src_rel, dst_rel, mode):
         return
     if mode in ("restore", "push"):
         live_json = json.loads(dst.read_text()) if dst.exists() else {}
-        merged = deep_merge(live_json, repo_json)
+        merged = deep_merge(drop_superseded_hooks(live_json, repo_json), repo_json)
         ensure_parent(dst)
         dst.write_text(json.dumps(merged, indent=2) + "\n")
         print(f"  merged repo values into {dst_rel} (live-only keys preserved)")
