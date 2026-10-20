@@ -244,7 +244,7 @@ def _selftest():
     r = isolation_report(isolated, "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-test\n")
     assert ".env carries its own credential" in r and "LEAK" not in r, r
     r = isolation_report(isolated, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\n")
-    assert ".env" not in r and "LEAK" not in r, r
+    assert ".env carries" not in r and "LEAK" not in r, r
 
     # check_model_overrides: flags the env var in a profile, passes when clean.
     with tempfile.TemporaryDirectory() as tmp:
@@ -899,6 +899,12 @@ def check_claude_mem_isolation(home=HOME):
                 f"[isolated]     {org_dir.name}/.env carries its own credential "
                 f"(claude-mem's Keychain lookup skipped)"
             )
+        else:
+            print(
+                f"[note]         {org_dir.name}/.env has no credential -- "
+                f"relies on the profile's own login (14.x); re-run "
+                f"--new-profile to pin it"
+            )
 
 
 CLAUDE_MEM_CRED_RE = re.compile(
@@ -1188,9 +1194,13 @@ def new_profile(org, dry_run=False, home=HOME):
             )
             return
         print("\n  ******************************************************************")
-        print("  *  Optional on claude-mem 14.x (it reads this profile's login). *")
-        print("  *  A credential here pins its billing even if the worker spawns     *")
-        print("  *  without this profile's config dir. Running                       *")
+        print(
+            "  *  Recommended default (14.x works without it, but this pins billing *"
+        )
+        print("  *  to this org even if the worker spawns without the config dir). *")
+        print(
+            "  *  Running                                                           *"
+        )
         print(f"  *    CLAUDE_CONFIG_DIR={config_dir} claude setup-token")
         print("  *  now -- finish the browser flow, copy the token it prints, paste  *")
         print("  *  it below (input hidden). Ctrl-C skips it; the profile then bills *")
@@ -1199,7 +1209,10 @@ def new_profile(org, dry_run=False, home=HOME):
         _claude(config_dir, "setup-token")
         token = getpass.getpass("  paste the token: ").strip()
         if not token:
-            print("  no token given -- skipping; re-run --new-profile to finish")
+            print(
+                "  no token given -- skipped. 14.x falls back to this profile's own "
+                "login; re-run --new-profile to add the .env pin later"
+            )
             return
         mem_dir.mkdir(mode=0o700, exist_ok=True)
         env_file.write_text(
@@ -1214,7 +1227,7 @@ def new_profile(org, dry_run=False, home=HOME):
         changed.append(".env")
 
     step(
-        "claude-mem .env credential (optional: pins billing to this org)",
+        "claude-mem .env credential (recommended: pins billing to this org)",
         has_cred,
         write_cred,
     )

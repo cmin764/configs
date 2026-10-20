@@ -395,9 +395,10 @@ from "everything else in the repo gets installed."
       zsh invocation] -> `.zprofile` [login only] -> `.zshrc` [interactive
       only]), and most headless spawns are neither, or don't go through a
       shell at all.
-   7. **`~/.claude-mem-<org>/.env` with a setup-token** -- optional since
-      claude-mem 14.x (Ctrl-C skips it), kept because it pins billing to
-      the org even for a worker spawned without the org's config dir.
+   7. **`~/.claude-mem-<org>/.env` with a setup-token** -- recommended
+      default (`--new-profile` asks for it; an empty paste skips it).
+      claude-mem 14.x works without it, but it pins billing to the org even
+      for a worker spawned without the org's config dir.
       Mechanism below.
    8. If steps 5, 6, or 7 wrote anything this run, a worker still holding the
       org's port is killed so the next prompt respawns it with the new
@@ -425,8 +426,8 @@ from "everything else in the repo gets installed."
    profile's `CLAUDE_CONFIG_DIR`, which step 6 and the shell hook
    guarantee. The live tell is `/api/health`'s `ai.authMethod`: it ends
    in `profile=<config dir name>` for an org, and `profile=default` means
-   the worker is on the default login. An `.env` credential is now
-   optional; it still pins billing regardless of how the worker was
+   the worker is on the default login. An `.env` credential is
+   recommended but not required; it still pins billing regardless of how the worker was
    spawned, because a credential in `~/.claude-mem-<org>/.env` makes the
    pre-flight return *before* the keychain lookup. Two credentials work
    there:
