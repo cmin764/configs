@@ -99,7 +99,9 @@ probe "uid-derived default when nothing configured" "$((37700 + $(id -u) % 100))
 
 # Stale pidfile housekeeping (the hook's original job) still works.
 printf '{"pid": 999999, "port": 37711}\n' > "$HOME/.claude-mem-org/worker.pid"
+touch "$HOME/.claude-mem-org/claude-mem.db-wal"
 run "stale worker.pid cleared" 'cleared stale worker.pid' $ORG
+[ -e "$HOME/.claude-mem-org/claude-mem.db-wal" ] && echo "ok   -wal kept" || { echo "FAIL -wal deleted"; fails=$((fails+1)); }
 [ ! -e "$HOME/.claude-mem-org/worker.pid" ] && echo "ok   stale pidfile removed" || { echo "FAIL stale pidfile still present"; fails=$((fails+1)); }
 printf '{"pid": %s, "port": 37711}\n' "$$" > "$HOME/.claude-mem-org/worker.pid"
 run "live worker.pid kept" - $ORG

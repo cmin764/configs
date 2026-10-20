@@ -14,8 +14,9 @@ for it to go stale.
 ## Quick start on a new Mac
 
 ```bash
-# Prerequisites: Homebrew, then gh (git credential helper), rtk
+# Prerequisites: Homebrew, then gh (git credential helper), rtk, git-credential-manager
 brew install gh rtk
+brew install --cask git-credential-manager   # only for dev.azure.com remotes
 # Claude Code via the official installer, not brew (see SKILL.md step 1)
 curl -fsSL https://claude.ai/install.sh | bash
 gh auth login
