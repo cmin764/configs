@@ -203,9 +203,9 @@ def _selftest():
     assert diff_paths({"a": 1}, {"a": 2}) == ["a: differs"]
 
     # check_claude_mem_isolation against a throwaway HOME: the three states
-    # it must tell apart are "org shares the default's port/dir", "isolated
-    # but the default profile is logged in", and "fully isolated".
-    def isolation_report(org_settings, logged_in, env_text=None):
+    # it must tell apart "org shares the default's port/dir" from "isolated",
+    # and report an org's own .env credential only when it carries a value.
+    def isolation_report(org_settings, env_text=None):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / ".claude-mem").mkdir()
@@ -227,7 +227,7 @@ def _selftest():
                 (home / ".claude-mem-org" / ".env").write_text(env_text)
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                check_claude_mem_isolation(home, lambda: logged_in)
+                check_claude_mem_isolation(home)
             return out.getvalue()
 
     isolated = isolated_claude_mem_settings(
@@ -237,21 +237,14 @@ def _selftest():
         str(CLAUDE_MEM_DEFAULT_WORKER_PORT + 1 + CLAUDE_MEM_SERVER_PORT_OFFSET),
     )
     shared = dict(isolated, CLAUDE_MEM_WORKER_PORT=str(CLAUDE_MEM_DEFAULT_WORKER_PORT))
-    r = isolation_report(shared, False)
+    r = isolation_report(shared)
     assert "[LEAK RISK]" in r and "CLAUDE_MEM_WORKER_PORT" in r, r
-    r = isolation_report(isolated, True)
-    assert (
-        "[isolated]     .claude-mem-org" in r
-        and "default profile (~/.claude) is logged in" in r
-    ), r
-    r = isolation_report(isolated, False)
-    assert r.count("[isolated]") == 2 and "LEAK" not in r, r
-    # An .env credential makes the default login irrelevant for that org...
-    r = isolation_report(isolated, True, "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-test\n")
+    r = isolation_report(isolated)
+    assert r.count("[isolated]") == 1 and "LEAK" not in r, r
+    r = isolation_report(isolated, "ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-test\n")
     assert ".env carries its own credential" in r and "LEAK" not in r, r
-    # ...but an .env with only empty placeholders does not.
-    r = isolation_report(isolated, True, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\n")
-    assert "[LEAK RISK]    default profile" in r, r
+    r = isolation_report(isolated, "ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\n")
+    assert ".env carries" not in r and "LEAK" not in r, r
 
     # check_model_overrides: flags the env var in a profile, passes when clean.
     with tempfile.TemporaryDirectory() as tmp:
@@ -858,36 +851,14 @@ def sync_iterm2_app_prefs(mode):
         print(f"  pulled iterm2 app prefs -> {ITERM2_APP_PREFS_REL}")
 
 
-def _default_profile_logged_in():
-    """True when the unsuffixed 'Claude Code-credentials' keychain entry --
-    the default ~/.claude login -- exists. Org profiles get a hashed suffix,
-    so this is exactly the entry claude-mem's pre-flight would pick up."""
-    if sys.platform != "darwin":
-        return False
-    return (
-        subprocess.run(
-            [
-                "security",
-                "find-generic-password",
-                "-s",
-                "Claude Code-credentials",
-                "-a",
-                getpass.getuser(),
-            ],
-            capture_output=True,
-        ).returncode
-        == 0
-    )
-
-
-def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_logged_in):
+def check_claude_mem_isolation(home=HOME):
     """Status-only: an org's ~/.claude-mem-<org>/settings.json must not still
     point at the default profile's data dir/port, or its worker silently
     shares data and billing with the default profile instead of isolating
     (confirmed live 2026-08-28 -- see SKILL.md step 7's claude-mem block).
     Not a sync target itself (claude-mem, not this repo, owns these files),
     just a tripwire so the leak is visible in --status instead of silent.
-    `home`/`default_logged_in` are injectable so --selftest can drive it."""
+    `home` is injectable so --selftest can drive it."""
     default_settings = home / ".claude-mem" / "settings.json"
     if not default_settings.exists():
         return
@@ -901,11 +872,12 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
     org_dirs = [
         d for d in sorted(home.glob(".claude-mem-*")) if (d / "settings.json").exists()
     ]
-    # A credential in <data-dir>/.env makes claude-mem's pre-flight return
-    # before its Keychain lookup, so that profile is immune to the default
-    # login below. Same regex the pid-guard hook uses.
+    # No Keychain check here: on claude-mem 14.x an org worker reads its
+    # own profile's hashed Keychain entry, never the default login, unless
+    # it was spawned without that profile's config dir -- which only the live
+    # worker can tell, so the pid-guard hook checks it per prompt instead.
+    # A credential in <data-dir>/.env skips that Keychain lookup altogether.
     cred_re = CLAUDE_MEM_CRED_RE
-    unprotected = []
     for org_dir in org_dirs:
         org = json.loads((org_dir / "settings.json").read_text())
         clashes = [k for k in shared_keys if org.get(k) == default.get(k)]
@@ -925,28 +897,13 @@ def check_claude_mem_isolation(home=HOME, default_logged_in=_default_profile_log
         if env_file.exists() and cred_re.search(env_file.read_text()):
             print(
                 f"[isolated]     {org_dir.name}/.env carries its own credential "
-                f"(claude-mem's Keychain pre-flight bypassed)"
-            )
-        else:
-            unprotected.append(org_dir.name)
-    # Ports and data dirs don't cover the auth side: claude-mem's OAuth
-    # pre-flight reads the DEFAULT profile's unsuffixed Keychain entry no
-    # matter which CLAUDE_CONFIG_DIR spawned it, and injects that token into
-    # its SDK calls (mechanism documented in claude-mem-pid-guard.sh). So a
-    # logged-in default profile is a leak for every org profile that has no
-    # .env credential of its own.
-    if unprotected:
-        if default_logged_in():
-            print(
-                f"[LEAK RISK]    default profile (~/.claude) is logged in and "
-                f"{', '.join(unprotected)} have no .env credential -- their "
-                f"workers will inject its token; give them one, or run: "
-                f"CLAUDE_CONFIG_DIR=~/.claude claude auth logout"
+                f"(claude-mem's Keychain lookup skipped)"
             )
         else:
             print(
-                "[isolated]     default profile logged out (nothing for "
-                "claude-mem's OAuth pre-flight to hijack)"
+                f"[note]         {org_dir.name}/.env has no credential -- "
+                f"relies on the profile's own login (14.x); re-run "
+                f"--new-profile to pin it"
             )
 
 
@@ -1237,36 +1194,40 @@ def new_profile(org, dry_run=False, home=HOME):
             )
             return
         print("\n  ******************************************************************")
-        print("  *  claude-mem's OAuth pre-flight reads the DEFAULT profile's login  *")
         print(
-            "  *  unless this file carries a credential. Running                    *"
+            "  *  Recommended default (14.x works without it, but this pins billing *"
+        )
+        print("  *  to this org even if the worker spawns without the config dir). *")
+        print(
+            "  *  Running                                                           *"
         )
         print(f"  *    CLAUDE_CONFIG_DIR={config_dir} claude setup-token")
         print("  *  now -- finish the browser flow, copy the token it prints, paste  *")
-        print("  *  it below (input hidden). Ctrl-C leaves the profile unprotected   *")
-        print(
-            "  *  and --status will keep saying so.                                 *"
-        )
+        print("  *  it below (input hidden). Ctrl-C skips it; the profile then bills *")
+        print("  *  through its own Keychain login.                                  *")
         print("  ******************************************************************\n")
         _claude(config_dir, "setup-token")
         token = getpass.getpass("  paste the token: ").strip()
         if not token:
-            print("  no token given -- skipping; re-run --new-profile to finish")
+            print(
+                "  no token given -- skipped. 14.x falls back to this profile's own "
+                "login; re-run --new-profile to add the .env pin later"
+            )
             return
         mem_dir.mkdir(mode=0o700, exist_ok=True)
         env_file.write_text(
             "# Read by claude-mem before every SDK spawn. A credential here makes it\n"
-            "# skip the Keychain lookup that would otherwise pick up the DEFAULT\n"
-            "# profile's login (see config-sync SKILL.md step 7). Written by\n"
-            "# sync.py --new-profile; regenerate with `claude setup-token` when the\n"
-            "# pid-guard hook reports AUTH FAILING (tokens last about a year).\n"
+            "# skip its Keychain lookup, so billing stays on this org even if the\n"
+            "# worker spawns without this profile's config dir (SKILL.md step 7).\n"
+            "# Written by sync.py --new-profile; regenerate with `claude setup-token`\n"
+            "# when the pid-guard hook reports AUTH FAILING (tokens last ~a year).\n"
             f"ANTHROPIC_AUTH_TOKEN={token}\n"
         )
         env_file.chmod(0o600)
         changed.append(".env")
 
     step(
-        "claude-mem .env credential (keeps billing on THIS profile's account)",
+        "claude-mem .env credential (recommended: pins billing to this org)",
         has_cred,
         write_cred,
     )
@@ -1297,7 +1258,8 @@ def new_profile(org, dry_run=False, home=HOME):
         + '"))["CLAUDE_MEM_WORKER_PORT"])\')/api/health'
     )
     print(
-        "        must report authMethod 'Gateway auth token' (not 'Claude Code OAuth token')."
+        "        authMethod must be 'Gateway auth token' (with .env) or end in"
+        f" 'profile={config_dir.name}', never 'profile=default'."
     )
     print(
         "        Optional MCP (linear/lucid/tally) is per profile too -- see SKILL.md step 9.\n"

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Exercises .claude/user/hooks/claude-mem-pid-guard.sh against every state it
-# is supposed to catch, without touching the real Keychain or a live worker:
-# `security` and `curl` are replaced by PATH shims whose behaviour is driven
-# by env vars, and HOME points at a throwaway directory. Runs on macOS and
-# Linux alike, so CI covers it on every push.
+# is supposed to catch, without touching a live worker: `curl` is replaced
+# by a PATH shim whose behaviour is driven by env vars, and HOME points at a
+# throwaway directory. Runs on macOS and Linux alike, so CI covers it on
+# every push.
 set -uo pipefail
 
 REPO_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -12,18 +12,13 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/bin" "$TMP/home/.claude" "$TMP/home/.claude-org" "$TMP/home/.claude-mem" "$TMP/home/.claude-mem-org"
-cat > "$TMP/bin/security" <<'EOF'
-#!/usr/bin/env bash
-# exit 0 = entry found (default profile logged in), 44 = not found
-[ "${SHIM_DEFAULT_LOGGED_IN:-0}" = 1 ] && exit 0 || exit 44
-EOF
 cat > "$TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 # records the URL it was asked for, prints canned health JSON if any
 for a in "$@"; do case "$a" in http*) echo "$a" >> "$SHIM_LOG";; esac; done
 [ -n "${SHIM_HEALTH:-}" ] && printf '%s' "$SHIM_HEALTH" || exit 7
 EOF
-chmod +x "$TMP/bin/security" "$TMP/bin/curl"
+chmod +x "$TMP/bin/curl"
 export PATH="$TMP/bin:$PATH" HOME="$TMP/home" SHIM_LOG="$TMP/curl.log"
 printf '{"CLAUDE_MEM_WORKER_PORT": "37711"}\n' > "$HOME/.claude-mem-org/settings.json"
 
@@ -43,28 +38,25 @@ run() {  # run <name> <expect-regex-on-stderr | -> [env assignments...]
     grep -qE "$expect" <<<"$err" && echo "ok   $name" || { echo "FAIL $name: expected /$expect/, got: ${err:-<nothing>}"; fails=$((fails+1)); }
   fi
 }
-ours='"pid":5432,"workerPath":"'"$HOME"'/.claude-org/plugins/cache/x/worker-service.cjs","ai":{"authMethod":"Claude Code OAuth token (read from system keychain at spawn)"}'
-theirs='"pid":2052,"workerPath":"'"$HOME"'/.claude/plugins/cache/x/worker-service.cjs","ai":{"authMethod":"Claude Code OAuth token (read from system keychain at spawn)"}'
-injected='"pid":5432,"workerPath":"'"$HOME"'/.claude-org/plugins/cache/x/worker-service.cjs","ai":{"authMethod":"Claude Code OAuth token (env, refreshed via keychain at spawn)"}'
+# authMethod strings verbatim from each supported worker-service.cjs.
+health() {  # health <pid> <profile dir> <authMethod>
+  printf '{"pid":%s,"workerPath":"%s/plugins/cache/x/worker-service.cjs","ai":{"provider":"claude","authMethod":"%s"}}' "$1" "$HOME/$2" "$3"
+}
+v13='Claude Code OAuth token (read from system keychain at spawn)'
+v14='Claude Code OAuth token (read from the Claude Code credential store at spawn)'
+envtok='Claude Code OAuth token (env, refreshed via keychain at spawn)'
 ORG="CLAUDE_CONFIG_DIR=$HOME/.claude-org CLAUDE_MEM_DATA_DIR=$HOME/.claude-mem-org"
 
-run "org profile, clean state, own worker"            -                 $ORG SHIM_HEALTH="{$ours}"
+run "org profile, own login (13.28)"                  -                 $ORG SHIM_HEALTH="$(health 5432 .claude-org "$v13 profile=.claude-org")"
+run "org profile, own login (14.x)"                   -                 $ORG SHIM_HEALTH="$(health 5432 .claude-org "$v14 profile=.claude-org")"
+run "org profile, inherited env token, own profile"   -                 $ORG SHIM_HEALTH="$(health 5432 .claude-org "$envtok profile=.claude-org")"
+run "org profile, .env gateway token"                 -                 $ORG SHIM_HEALTH="$(health 5432 .claude-org 'Gateway auth token (from ~/.claude-mem/.env)')"
 run "org profile, worker not running"                 -                 $ORG
-run "default profile, logged in, is NOT a leak"       -                 SHIM_DEFAULT_LOGGED_IN=1 SHIM_HEALTH="{$theirs}"
-run "org profile, default logged in -> LEAK RISK"     'LEAK RISK'       $ORG SHIM_DEFAULT_LOGGED_IN=1 SHIM_HEALTH="{$ours}"
-run "org profile, other profile's worker -> MISMATCH" 'MISMATCH'        $ORG SHIM_HEALTH="{$theirs}"
-run "org profile, injected token -> LEAK ACTIVE"      'LEAK ACTIVE.*kill 5432' $ORG SHIM_HEALTH="{$injected}"
+run "default profile reading its own login"           -                 SHIM_HEALTH="$(health 2052 .claude "$v14 profile=default")"
+run "org profile, other profile's worker -> MISMATCH" 'MISMATCH'        $ORG SHIM_HEALTH="$(health 2052 .claude "$v14 profile=default")"
+run "org worker on default login (13.28) -> LEAK ACTIVE" 'LEAK ACTIVE.*kill 5432' $ORG SHIM_HEALTH="$(health 5432 .claude-org "$v13 profile=default")"
+run "org worker on default login (14.x) -> LEAK ACTIVE"  'LEAK ACTIVE.*kill 5432' $ORG SHIM_HEALTH="$(health 5432 .claude-org "$envtok profile=default")"
 run "org profile, workerPath absent (old claude-mem)" -                 $ORG SHIM_HEALTH='{"pid":1}'
-
-# An .env credential short-circuits claude-mem's Keychain pre-flight, so the
-# default login stops being a leak for that org -- but only a real value does.
-printf 'ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=sk-ant-oat01-test\n' > "$HOME/.claude-mem-org/.env"
-run "org profile, .env token, default logged in -> quiet"   -           $ORG SHIM_DEFAULT_LOGGED_IN=1 SHIM_HEALTH="{$ours}"
-printf 'ANTHROPIC_API_KEY=\nANTHROPIC_AUTH_TOKEN=\n' > "$HOME/.claude-mem-org/.env"
-run "org profile, .env empty placeholders -> LEAK RISK"     'LEAK RISK'  $ORG SHIM_DEFAULT_LOGGED_IN=1 SHIM_HEALTH="{$ours}"
-rm -f "$HOME/.claude-mem-org/.env"
-printf 'ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-test\n' > "$HOME/custom.env"
-run "CLAUDE_MEM_ENV_FILE override honoured"                 -           $ORG SHIM_DEFAULT_LOGGED_IN=1 CLAUDE_MEM_ENV_FILE="$HOME/custom.env"
 
 # Expired/failing credentials show up as claude-mem's own failure counter.
 printf '{"consecutiveFailures": 3, "lastErrorMessage": "401 invalid token"}\n' > "$HOME/.claude-mem-org/observer-health.json"
