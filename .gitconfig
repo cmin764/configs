@@ -17,3 +17,9 @@
 # to commit unconditionally. See .gitconfig-local.example.
 [include]
 	path = ~/.gitconfig.local
+# Azure DevOps via Git Credential Manager. Scoped to the host (like the GitHub
+# blocks above) because an unscoped helper reset would also wipe the gh helper.
+[credential "https://dev.azure.com"]
+	helper =
+	helper = manager
+	useHttpPath = true
