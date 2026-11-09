@@ -23,3 +23,6 @@
 	helper =
 	helper = manager
 	useHttpPath = true
+[credential]
+	helper = 
+	helper = /usr/local/share/gcm-core/git-credential-manager
