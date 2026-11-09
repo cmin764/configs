@@ -58,6 +58,8 @@ _claude_config_dir_by_pwd() {
         "$HOME"/Work/*)
             local rest="${PWD#$HOME/Work/}"
             local org="${rest%%/*}"
+            # OSV work runs under the Bonsai Labs AI profile (same login, one claude-mem worker).
+            [ "${(L)org}" = osv ] && org=bonsai-labs-ai
             local dir="$HOME/.claude-${(L)org}"
             local mem_dir="$HOME/.claude-mem-${(L)org}"
             if [ -d "$dir" ]; then
