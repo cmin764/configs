@@ -13,7 +13,7 @@ ponytail_script=$(ls -d "$config_dir"/plugins/cache/ponytail/ponytail/*/hooks/po
 rtk_ok_count=$(command -v rtk >/dev/null 2>&1 && rtk init --show 2>/dev/null | grep -cE '^\[ok\] (Hook|settings\.json):')
 if ! command -v rtk >/dev/null 2>&1; then
     printf ' \033[38;5;196m[RTK:MISSING]\033[0m'
-elif [ "${rtk_ok_count:-0}" -lt 2 ] || ! grep -q '@~/.claude/RTK.md' "$config_dir/CLAUDE.md" 2>/dev/null; then
+elif [ "${rtk_ok_count:-0}" -lt 2 ] || ! grep -q '@~/.claude/RTK.md' "$config_dir/CLAUDE.md" "$config_dir/CLAUDE.base.md" 2>/dev/null; then
     printf ' \033[38;5;196m[RTK:NO-HOOK]\033[0m'
 else
     printf ' \033[38;5;108m[RTK]\033[0m'

@@ -20,7 +20,7 @@ order on a bare machine.
 | Kind | Files | Why |
 |---|---|---|
 | **Symlink** | `.zprofile`, `.zshrc`, `.vimrc`, `.gitconfig`, `.gitignore_global` | Repo and machine are the same inode. Nothing to sync, drift is structurally impossible. |
-| **Symlink (per Claude profile)** | `.claude/user/CLAUDE.md`, `.claude/user/RTK.md`, `.claude/user/hooks/` (and, for `~/.claude` only, `.claude/user/skills/` as `skills`: per-skill links into `ai-tools`) | Same as above, but applied once per Claude Code profile directory: `~/.claude` plus any `~/.claude-<org>` created for per-org account isolation (see restore step 7). A fresh Mac only has `~/.claude`. These are the user's own authored tooling (this repo's skills, hooks, memory files) -- identical everywhere in the default profile (org profiles start with none), unlike plugins/MCP below: there's no personal-vs-work split for skills *you* wrote, only for third-party installs. A project's own `.claude/skills/` (versioned and shared with a team through that project's own repo) is a separate, unrelated layer Claude Code discovers per-project regardless of `CLAUDE_CONFIG_DIR` -- out of scope for this skill entirely, see README's note on skill promotion. |
+| **Symlink (per Claude profile)** | `.claude/user/CLAUDE.md` (as `CLAUDE.base.md`, imported by each tenant's own generated `CLAUDE.md`, never the profile's `CLAUDE.md` itself: claude-mem appends its per-tenant `MY-RULES.md` import there, and a shared symlink would leak it into every tenant and the repo), `.claude/user/RTK.md`, `.claude/user/hooks/` (and, for `~/.claude` only, `.claude/user/skills/` as `skills`: per-skill links into `ai-tools`) | Same as above, but applied once per Claude Code profile directory: `~/.claude` plus any `~/.claude-<org>` created for per-org account isolation (see restore step 7). A fresh Mac only has `~/.claude`. These are the user's own authored tooling (this repo's skills, hooks, memory files) -- identical everywhere in the default profile (org profiles start with none), unlike plugins/MCP below: there's no personal-vs-work split for skills *you* wrote, only for third-party installs. A project's own `.claude/skills/` (versioned and shared with a team through that project's own repo) is a separate, unrelated layer Claude Code discovers per-project regardless of `CLAUDE_CONFIG_DIR` -- out of scope for this skill entirely, see README's note on skill promotion. |
 | **Not synced, deliberately** | `plugins/` and MCP registrations (`.claude.json`) inside each Claude profile; Codex's `config.toml` `[marketplaces.*]`/`[plugins.*]`/`[projects.*]` blocks | User-scope Claude Code state Claude Code itself keeps per config dir, not per human -- `claude plugin install`/`claude mcp add --scope user` only ever touch whichever `CLAUDE_CONFIG_DIR` is active. Installing a plugin under the personal profile must not make it appear at work and vice versa, so each profile gets its own independent install/registration (step 7's recipe repeats the commands per org) rather than sharing one copy. Costs some duplicate disk for plugins used in both places -- worth it for the isolation. Codex's `config.toml` mixes this same kind of self-managed state (marketplaces, plugin installs, per-project trust) with a handful of genuinely hand-edited scalars (`model`, `[shell_environment_policy]`, `[desktop]` prefs) in one TOML file -- `sync.py` is stdlib-only and has no TOML writer, and splitting the file cleanly would need one, so the whole file is left untracked rather than force a partial fit. `apps/codex/hooks.json` (Codex's actual hand-authored hook wiring, the TOML file's one purely-hand-edited chunk that's easy to isolate) is tracked on its own, same as `.claude/user/settings.json`'s `hooks` block. |
 
 **Where `.claude.json` actually lives is not consistent across profiles, and that's not a bug.**
@@ -291,12 +291,12 @@ from "everything else in the repo gets installed."
    merge and symlink land both, so the hook is live the moment restore
    finishes. `rtk init -g` doesn't check for this: it unconditionally
    rewrites `~/.claude/RTK.md` and appends to `~/.claude/CLAUDE.md` with its
-   own generic template, and since both are symlinks into this repo, running
-   it here destroys the hand-tuned `RTK.md` content through the symlink
-   (confirmed by running it on a fresh restore -- it silently replaced the
-   full command reference and the "do not re-run" warning itself with rtk's
-   stock output). If that ever happens, `git checkout -- .claude/user/RTK.md
-   .claude/user/CLAUDE.md` recovers the repo copy.
+   own generic template. `RTK.md` is a symlink into this repo, so running it
+   here destroys the hand-tuned content through the symlink (confirmed on a
+   fresh restore: it silently replaced the full command reference and the
+   "do not re-run" warning itself with rtk's stock output). If that ever
+   happens, `git checkout -- .claude/user/RTK.md` recovers the repo copy.
+   `CLAUDE.md` is a per-tenant file, so the append never reaches the repo.
    Verify instead of initializing: confirm the hook fires (run something
    `RTK.md` lists as intercepted, e.g. `git status`, and see rtk's condensed
    output rather than git's normal output). `rtk init --show` is safe and
@@ -349,8 +349,9 @@ from "everything else in the repo gets installed."
    prints `[done]`/`[todo]` per step without touching anything):
    1. `~/.claude-<org>` created.
    2. `claude auth login` under it (browser OAuth, a full account).
-   3. The per-profile slice of `--push` (symlinks plus the settings merge),
-      so the shared skills/hooks/`CLAUDE.md`/`RTK.md`/settings land in the
+   3. The per-profile slice of `--push` (symlinks, the settings merge, the
+      generated per-tenant `CLAUDE.md` and the claude-mem policy),
+      so the shared skills/hooks/`CLAUDE.base.md`/`RTK.md`/settings land in the
       new profile like they did in the default one at restore step 3 --
       without rewriting Cursor/iTerm/Sublime files, which a new Claude
       profile has no business touching.
@@ -708,3 +709,7 @@ On a fresh Mac, set `external-agent-import-sync-enabled = false` in `~/.codex/co
 ## Exposed skills and `synced/`
 
 `.claude/user/skills/` holds relative links into the sibling `ai-tools/skills/` (disk-janitor, frontend-review, job-fit-assessor, travel-planner). Only `~/.claude` gets the link; org profiles (created for a `~/Work/<org>` dir) get none and a legacy link to the old skills dir is removed on `--restore`. A restore with `ai-tools` not cloned beside this repo leaves dangling links, which `--status` reports. `synced/` in the same dir is Claude Code's claude.ai account-skill cache: machine-generated, git-ignored, a real directory (so never flagged as dangling), not hand-edited.
+
+## claude-mem tenant policy (15.x)
+
+Each tenant (`~/.claude-mem` and every `~/.claude-mem-<org>`) gets `CLAUDE_MEM_TENANT_POLICY` from `sync.py` on `--push`/`--restore` (and `--new-profile`, which runs the same slice), and `--status` reports drift, a missing or unreadable settings file, and a rules import that points at another tenant. Policy: provider `claude`, auth method `subscription` (the default profile's login, or the org's `.env` setup-token), quota fallback provider `off`, credential fallback Off. 15.x defaults the quota fallback to `claude`, which would switch to a different Claude account than the tenant's own. Only these keys are enforced; every other setting stays per tenant. Changes apply when that tenant's worker restarts. Org `.env` holds the credential (never read it, never commit it); `ANTHROPIC_FALLBACK_API_KEY` is deliberately unset everywhere.

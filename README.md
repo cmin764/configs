@@ -44,7 +44,7 @@ optional MCP servers:
 |---|---|---|
 | `.zprofile` `.zshrc` `.vimrc` `.gitconfig` `.gitignore_global` | `~/` (symlinked) | Shell env, aliases, vim, git identity, global ignores |
 | `.gitconfig-local.example` | n/a, copy to `~/.gitconfig.local` | Per-client git email override, included unconditionally, gitignored if it doesn't exist |
-| `.claude/user/CLAUDE.md` | `~/.claude/CLAUDE.md` (symlinked) | Coding standards, communication style, tooling rules for every Claude Code session |
+| `.claude/user/CLAUDE.md` | `~/.claude/CLAUDE.base.md` (symlinked, imported by each profile's own generated `CLAUDE.md`) | Coding standards, communication style, tooling rules for every Claude Code session |
 | `.claude/user/RTK.md` | `~/.claude/RTK.md` (symlinked) | RTK (token-optimizing CLI proxy) usage guide |
 | `.claude/user/settings.json` | `~/.claude/settings.json` (merged, never overwritten) | Harness config: permissions, hooks, plugins, `autoMode` |
 | `.claude/user/hooks/` | `~/.claude/hooks/` (symlinked) | Hook scripts referenced from `settings.json` |

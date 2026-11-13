@@ -51,8 +51,12 @@ SYMLINKS = [
 # directory: the default ~/.claude plus any ~/.claude-<org> profile created
 # for per-org account isolation (see .zshrc's chpwd hook). A fresh Mac has
 # only ~/.claude, so --restore behaves exactly as before this existed.
+CLAUDE_BASE_NAME = "CLAUDE.base.md"
 CLAUDE_PROFILE_SYMLINKS = [
-    (".claude/user/CLAUDE.md", "CLAUDE.md"),
+    # The shared personal base is only imported, never the profile's own
+    # CLAUDE.md: claude-mem appends its per-tenant rules import to that file,
+    # and through a shared symlink that write lands in every tenant (and the repo).
+    (".claude/user/CLAUDE.md", CLAUDE_BASE_NAME),
     (".claude/user/RTK.md", "RTK.md"),
     (".claude/user/hooks", "hooks"),
 ]
@@ -234,6 +238,35 @@ def _selftest():
         drop_legacy_skills_link(foreign_link, "restore")
         assert not own_link.is_symlink() and foreign_link.is_symlink()
     assert diff_paths({"a": 1}, {"a": 2}) == ["a: differs"]
+
+    # claude-mem tenant policy: drift detected, fixed, other keys untouched.
+    with tempfile.TemporaryDirectory() as tmp:
+        prof = Path(tmp) / ".claude-org"
+        mem = Path(tmp) / ".claude-mem-org"
+        mem.mkdir()
+        (mem / "settings.json").write_text(json.dumps({"keep": "me"}))
+        assert claude_mem_policy_drift(mem / "settings.json")
+        sync_claude_mem_policy(prof, "push")
+        fixed = json.loads((mem / "settings.json").read_text())
+        assert fixed["keep"] == "me" and not claude_mem_policy_drift(
+            mem / "settings.json"
+        )
+
+    # sync_claude_md: a shared symlink becomes a per-tenant file importing the
+    # base, and a real file keeps what claude-mem appended.
+    with tempfile.TemporaryDirectory() as tmp:
+        prof = Path(tmp) / ".claude-org"
+        prof.mkdir()
+        (prof / "CLAUDE.md").symlink_to(repo_path(".claude/user/CLAUDE.md"))
+        sync_claude_md(prof, "push")
+        md = prof / "CLAUDE.md"
+        assert not md.is_symlink() and CLAUDE_BASE_NAME in md.read_text()
+        md.write_text(md.read_text() + "@/rules/MY-RULES.md\n")
+        sync_claude_md(prof, "push")
+        assert "@/rules/MY-RULES.md" in md.read_text()
+        md.write_text("own notes\n")
+        sync_claude_md(prof, "push")
+        assert md.read_text().startswith("@") and "own notes" in md.read_text()
 
     # check_claude_mem_isolation against a throwaway HOME: the three states
     # it must tell apart "org shares the default's port/dir" from "isolated",
@@ -1001,6 +1034,65 @@ def allocate_claude_mem_ports(used_worker, used_server, bindable=_port_bindable)
     raise SystemExit("no free claude-mem port pair left")
 
 
+# Billing/credential policy every tenant (personal and each org) gets, so a
+# run that hits quota or loses its credential waits instead of silently
+# switching to another Claude account or provider. claude-mem 15.x defaults the
+# quota fallback to "claude", i.e. a different login than the tenant's own.
+# Auth stays "subscription": the tenant's own login (default profile) or its
+# .env setup-token (orgs). Credential fallback ("" = Off) never uses the
+# fallback API key. Ports/data dirs are per tenant and set at --new-profile.
+CLAUDE_MEM_TENANT_POLICY = {
+    "CLAUDE_MEM_PROVIDER": "claude",
+    "CLAUDE_MEM_CLAUDE_AUTH_METHOD": "subscription",
+    "CLAUDE_MEM_QUOTA_FALLBACK_PROVIDER": "off",
+    "CLAUDE_MEM_QUOTA_FALLBACK_AUTH_METHOD": "",
+}
+
+
+def claude_mem_policy_drift(settings_path):
+    """Policy keys whose live value differs from CLAUDE_MEM_TENANT_POLICY."""
+    live = _load_settings(settings_path)
+    return {
+        k: live.get(k) for k, v in CLAUDE_MEM_TENANT_POLICY.items() if live.get(k) != v
+    }
+
+
+def _load_settings(path):
+    """settings.json as a dict, or None when unreadable or not an object."""
+    try:
+        live = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    return live if isinstance(live, dict) else None
+
+
+def sync_claude_mem_policy(profile_dir, mode):
+    """Enforce the tenant policy on one profile's claude-mem settings.json,
+    leaving every other (accumulated) key alone. Takes effect on worker restart."""
+    path = claude_mem_dir(profile_dir) / "settings.json"
+    if not path.exists():
+        if mode == "status":
+            print(
+                f"{'[no settings]':<15}{path} (re-run --push after claude-mem's first start)"
+            )
+        return
+    if _load_settings(path) is None:
+        print(f"{'[unreadable]':<15}{path} (not a JSON object, policy skipped)")
+        return
+    drift = claude_mem_policy_drift(path)
+    if mode == "status":
+        label = "policy ok" if not drift else "policy drift"
+        print(
+            f"{'[' + label + ']':<15}{path}"
+            + (f" ({', '.join(drift)}; --push fixes)" if drift else "")
+        )
+    elif mode in ("restore", "push") and drift:
+        live = _load_settings(path)
+        live.update(CLAUDE_MEM_TENANT_POLICY)
+        path.write_text(json.dumps(live, indent=2) + "\n")
+        print(f"  set claude-mem policy in {path} (restart its worker to apply)")
+
+
 def isolated_claude_mem_settings(base, mem_dir, worker_port, server_port):
     """The default profile's claude-mem settings re-pointed at an org's own
     data dir and ports. These six keys are every place claude-mem would
@@ -1016,6 +1108,7 @@ def isolated_claude_mem_settings(base, mem_dir, worker_port, server_port):
             ),
             "CLAUDE_MEM_SERVER_URL": f"http://127.0.0.1:{server_port}",
             "CLAUDE_MEM_SERVER_BETA_URL": f"http://127.0.0.1:{server_port}",
+            **CLAUDE_MEM_TENANT_POLICY,
         }
     )
     return out
@@ -1100,6 +1193,7 @@ def new_profile(org, dry_run=False, home=HOME):
         lambda: (
             (config_dir / "hooks").is_symlink()
             and (config_dir / "settings.json").exists()
+            and (config_dir / CLAUDE_BASE_NAME).is_symlink()
         ),
         lambda: sync_profile(config_dir, "push"),
     )
@@ -1358,17 +1452,88 @@ def drop_legacy_skills_link(skills_link, mode):
         print(f"  removed legacy skills link {skills_link}")
 
 
+def _tilde(path):
+    try:
+        return f"~/{path.relative_to(HOME)}"
+    except ValueError:
+        return str(path)
+
+
+def claude_mem_dir(profile_dir):
+    """~/.claude -> ~/.claude-mem, ~/.claude-<org> -> ~/.claude-mem-<org>."""
+    suffix = profile_dir.name.removeprefix(".claude")
+    return profile_dir.parent / f".claude-mem{suffix}"
+
+
+def _is_rules_import(line):
+    """A claude-mem rules import line, whichever tenant it points at."""
+    line = line.strip()
+    return line.startswith("@~/.claude-mem") and line.endswith("/MY-RULES.md")
+
+
+def sync_claude_md(profile_dir, mode):
+    """Per-tenant CLAUDE.md: a real file that imports the shared base (and the
+    tenant's own claude-mem rules when they exist). Never overwritten once it
+    is a real file that already imports the base, so what claude-mem appends
+    survives; only a missing base import is repaired."""
+    dst = profile_dir / "CLAUDE.md"
+    base_import = f"@{_tilde(profile_dir / CLAUDE_BASE_NAME)}"
+    rules = claude_mem_dir(profile_dir) / "MY-RULES.md"
+    stub = base_import + "\n"
+    if rules.exists():
+        stub += f"@{_tilde(rules)}\n"
+    real = dst.is_file() and not dst.is_symlink()
+    has_base = real and base_import in dst.read_text()
+    if mode == "status":
+        foreign = [
+            ln.strip()
+            for ln in (dst.read_text().splitlines() if real else [])
+            if _is_rules_import(ln) and ln.strip() != f"@{_tilde(rules)}"
+        ]
+        if foreign:
+            print(f"[foreign rules] {dst} ({foreign[0]} belongs to another tenant)")
+        elif has_base:
+            print(f"[tenant file]  {dst}")
+        elif dst.is_symlink():
+            print(f"[shared link]  {dst} (leaks across tenants, --push replaces it)")
+        elif real:
+            print(f"[no base]      {dst} (missing {base_import}, --push repairs it)")
+        else:
+            print(f"[missing]      {dst} (--push writes it)")
+        return
+    if mode == "pull" or has_base:
+        return  # generated per machine, never lives in the repo
+    if real:
+        old = dst.read_text()
+        backup_if_real_file(dst)
+        if f"@{_tilde(rules)}" in old.splitlines():
+            stub = base_import + "\n"  # already imported below, don't repeat it
+        stub += old if old.startswith("\n") else "\n" + old
+    elif dst.is_symlink():
+        dst.unlink()
+    ensure_parent(dst)
+    dst.write_text(stub)
+    print(f"  wrote {dst}")
+
+
 def sync_profile(profile_dir, mode):
     """The per-Claude-profile slice of a sync: shared symlinks plus the
     settings merge, for one ~/.claude[-<org>] directory."""
     print(f"-- profile {profile_dir} --")
     for src, rel in CLAUDE_PROFILE_SYMLINKS:
         sync_symlink(src, profile_dir / rel, mode)
+    sync_claude_md(profile_dir, mode)
+    sync_claude_mem_policy(profile_dir, mode)
     if profile_dir == HOME / ".claude":
         for src, rel in CLAUDE_DEFAULT_ONLY_SYMLINKS:
             sync_symlink(src, profile_dir / rel, mode)
         if mode == "status":
             check_exposed_skills()
+            base = repo_path(".claude/user/CLAUDE.md")
+            if any(_is_rules_import(ln) for ln in base.read_text().splitlines()):
+                print(
+                    f"[leaked rules] {base} (remove the MY-RULES import, it is shared)"
+                )
     else:
         drop_legacy_skills_link(profile_dir / "skills", mode)
     for src, rel in CLAUDE_PROFILE_MERGES:
