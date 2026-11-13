@@ -1051,10 +1051,19 @@ CLAUDE_MEM_TENANT_POLICY = {
 
 def claude_mem_policy_drift(settings_path):
     """Policy keys whose live value differs from CLAUDE_MEM_TENANT_POLICY."""
-    live = json.loads(settings_path.read_text())
+    live = _load_settings(settings_path)
     return {
         k: live.get(k) for k, v in CLAUDE_MEM_TENANT_POLICY.items() if live.get(k) != v
     }
+
+
+def _load_settings(path):
+    """settings.json as a dict, or None when unreadable or not an object."""
+    try:
+        live = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    return live if isinstance(live, dict) else None
 
 
 def sync_claude_mem_policy(profile_dir, mode):
@@ -1062,16 +1071,23 @@ def sync_claude_mem_policy(profile_dir, mode):
     leaving every other (accumulated) key alone. Takes effect on worker restart."""
     path = claude_mem_dir(profile_dir) / "settings.json"
     if not path.exists():
+        if mode == "status":
+            print(
+                f"{'[no settings]':<15}{path} (re-run --push after claude-mem's first start)"
+            )
+        return
+    if _load_settings(path) is None:
+        print(f"{'[unreadable]':<15}{path} (not a JSON object, policy skipped)")
         return
     drift = claude_mem_policy_drift(path)
     if mode == "status":
         label = "policy ok" if not drift else "policy drift"
         print(
-            f"[{label:<13}] {path}"
+            f"{'[' + label + ']':<15}{path}"
             + (f" ({', '.join(drift)}; --push fixes)" if drift else "")
         )
     elif mode in ("restore", "push") and drift:
-        live = json.loads(path.read_text())
+        live = _load_settings(path)
         live.update(CLAUDE_MEM_TENANT_POLICY)
         path.write_text(json.dumps(live, indent=2) + "\n")
         print(f"  set claude-mem policy in {path} (restart its worker to apply)")
@@ -1177,6 +1193,7 @@ def new_profile(org, dry_run=False, home=HOME):
         lambda: (
             (config_dir / "hooks").is_symlink()
             and (config_dir / "settings.json").exists()
+            and (config_dir / CLAUDE_BASE_NAME).is_symlink()
         ),
         lambda: sync_profile(config_dir, "push"),
     )
@@ -1448,6 +1465,12 @@ def claude_mem_dir(profile_dir):
     return profile_dir.parent / f".claude-mem{suffix}"
 
 
+def _is_rules_import(line):
+    """A claude-mem rules import line, whichever tenant it points at."""
+    line = line.strip()
+    return line.startswith("@~/.claude-mem") and line.endswith("/MY-RULES.md")
+
+
 def sync_claude_md(profile_dir, mode):
     """Per-tenant CLAUDE.md: a real file that imports the shared base (and the
     tenant's own claude-mem rules when they exist). Never overwritten once it
@@ -1462,7 +1485,14 @@ def sync_claude_md(profile_dir, mode):
     real = dst.is_file() and not dst.is_symlink()
     has_base = real and base_import in dst.read_text()
     if mode == "status":
-        if has_base:
+        foreign = [
+            ln.strip()
+            for ln in (dst.read_text().splitlines() if real else [])
+            if _is_rules_import(ln) and ln.strip() != f"@{_tilde(rules)}"
+        ]
+        if foreign:
+            print(f"[foreign rules] {dst} ({foreign[0]} belongs to another tenant)")
+        elif has_base:
             print(f"[tenant file]  {dst}")
         elif dst.is_symlink():
             print(f"[shared link]  {dst} (leaks across tenants, --push replaces it)")
@@ -1476,6 +1506,8 @@ def sync_claude_md(profile_dir, mode):
     if real:
         old = dst.read_text()
         backup_if_real_file(dst)
+        if f"@{_tilde(rules)}" in old.splitlines():
+            stub = base_import + "\n"  # already imported below, don't repeat it
         stub += old if old.startswith("\n") else "\n" + old
     elif dst.is_symlink():
         dst.unlink()
@@ -1497,6 +1529,11 @@ def sync_profile(profile_dir, mode):
             sync_symlink(src, profile_dir / rel, mode)
         if mode == "status":
             check_exposed_skills()
+            base = repo_path(".claude/user/CLAUDE.md")
+            if any(_is_rules_import(ln) for ln in base.read_text().splitlines()):
+                print(
+                    f"[leaked rules] {base} (remove the MY-RULES import, it is shared)"
+                )
     else:
         drop_legacy_skills_link(profile_dir / "skills", mode)
     for src, rel in CLAUDE_PROFILE_MERGES:

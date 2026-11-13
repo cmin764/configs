@@ -290,13 +290,13 @@ from "everything else in the repo gets installed."
    `.claude/user/CLAUDE.md` already imports `@~/.claude/RTK.md` -- step 3's
    merge and symlink land both, so the hook is live the moment restore
    finishes. `rtk init -g` doesn't check for this: it unconditionally
-   rewrites `~/.claude/RTK.md` and appends to `~/.claude/CLAUDE.md` (a per-tenant file, not the repo copy) with its
-   own generic template, and since both are symlinks into this repo, running
-   it here destroys the hand-tuned `RTK.md` content through the symlink
-   (confirmed by running it on a fresh restore -- it silently replaced the
-   full command reference and the "do not re-run" warning itself with rtk's
-   stock output). If that ever happens, `git checkout -- .claude/user/RTK.md
-   .claude/user/CLAUDE.md` recovers the repo copy.
+   rewrites `~/.claude/RTK.md` and appends to `~/.claude/CLAUDE.md` with its
+   own generic template. `RTK.md` is a symlink into this repo, so running it
+   here destroys the hand-tuned content through the symlink (confirmed on a
+   fresh restore: it silently replaced the full command reference and the
+   "do not re-run" warning itself with rtk's stock output). If that ever
+   happens, `git checkout -- .claude/user/RTK.md` recovers the repo copy.
+   `CLAUDE.md` is a per-tenant file, so the append never reaches the repo.
    Verify instead of initializing: confirm the hook fires (run something
    `RTK.md` lists as intercepted, e.g. `git status`, and see rtk's condensed
    output rather than git's normal output). `rtk init --show` is safe and
@@ -349,8 +349,9 @@ from "everything else in the repo gets installed."
    prints `[done]`/`[todo]` per step without touching anything):
    1. `~/.claude-<org>` created.
    2. `claude auth login` under it (browser OAuth, a full account).
-   3. The per-profile slice of `--push` (symlinks plus the settings merge),
-      so the shared skills/hooks/`CLAUDE.md`/`RTK.md`/settings land in the
+   3. The per-profile slice of `--push` (symlinks, the settings merge, the
+      generated per-tenant `CLAUDE.md` and the claude-mem policy),
+      so the shared skills/hooks/`CLAUDE.base.md`/`RTK.md`/settings land in the
       new profile like they did in the default one at restore step 3 --
       without rewriting Cursor/iTerm/Sublime files, which a new Claude
       profile has no business touching.
@@ -711,4 +712,4 @@ On a fresh Mac, set `external-agent-import-sync-enabled = false` in `~/.codex/co
 
 ## claude-mem tenant policy (15.x)
 
-Each tenant (`~/.claude-mem` and every `~/.claude-mem-<org>`) gets `CLAUDE_MEM_TENANT_POLICY` from `sync.py` on `--push`/`--restore`/`--new-profile`, and `--status` reports drift. Policy: provider `claude`, auth method `subscription` (the default profile's login, or the org's `.env` setup-token), quota fallback provider `off`, credential fallback Off. 15.x defaults the quota fallback to `claude`, which would switch to a different Claude account than the tenant's own. Only these keys are enforced; every other setting stays per tenant. Changes apply when that tenant's worker restarts. Org `.env` holds the credential (never read it, never commit it); `ANTHROPIC_FALLBACK_API_KEY` is deliberately unset everywhere.
+Each tenant (`~/.claude-mem` and every `~/.claude-mem-<org>`) gets `CLAUDE_MEM_TENANT_POLICY` from `sync.py` on `--push`/`--restore` (and `--new-profile`, which runs the same slice), and `--status` reports drift, a missing or unreadable settings file, and a rules import that points at another tenant. Policy: provider `claude`, auth method `subscription` (the default profile's login, or the org's `.env` setup-token), quota fallback provider `off`, credential fallback Off. 15.x defaults the quota fallback to `claude`, which would switch to a different Claude account than the tenant's own. Only these keys are enforced; every other setting stays per tenant. Changes apply when that tenant's worker restarts. Org `.env` holds the credential (never read it, never commit it); `ANTHROPIC_FALLBACK_API_KEY` is deliberately unset everywhere.
