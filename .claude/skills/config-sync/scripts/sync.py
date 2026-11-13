@@ -51,8 +51,12 @@ SYMLINKS = [
 # directory: the default ~/.claude plus any ~/.claude-<org> profile created
 # for per-org account isolation (see .zshrc's chpwd hook). A fresh Mac has
 # only ~/.claude, so --restore behaves exactly as before this existed.
+CLAUDE_BASE_NAME = "CLAUDE.base.md"
 CLAUDE_PROFILE_SYMLINKS = [
-    (".claude/user/CLAUDE.md", "CLAUDE.md"),
+    # The shared personal base is only imported, never the profile's own
+    # CLAUDE.md: claude-mem appends its per-tenant rules import to that file,
+    # and through a shared symlink that write lands in every tenant (and the repo).
+    (".claude/user/CLAUDE.md", CLAUDE_BASE_NAME),
     (".claude/user/RTK.md", "RTK.md"),
     (".claude/user/hooks", "hooks"),
 ]
@@ -234,6 +238,22 @@ def _selftest():
         drop_legacy_skills_link(foreign_link, "restore")
         assert not own_link.is_symlink() and foreign_link.is_symlink()
     assert diff_paths({"a": 1}, {"a": 2}) == ["a: differs"]
+
+    # sync_claude_md: a shared symlink becomes a per-tenant file importing the
+    # base, and a real file keeps what claude-mem appended.
+    with tempfile.TemporaryDirectory() as tmp:
+        prof = Path(tmp) / ".claude-org"
+        prof.mkdir()
+        (prof / "CLAUDE.md").symlink_to(repo_path(".claude/user/CLAUDE.md"))
+        sync_claude_md(prof, "push")
+        md = prof / "CLAUDE.md"
+        assert not md.is_symlink() and CLAUDE_BASE_NAME in md.read_text()
+        md.write_text(md.read_text() + "@/rules/MY-RULES.md\n")
+        sync_claude_md(prof, "push")
+        assert "@/rules/MY-RULES.md" in md.read_text()
+        md.write_text("own notes\n")
+        sync_claude_md(prof, "push")
+        assert md.read_text().startswith("@") and "own notes" in md.read_text()
 
     # check_claude_mem_isolation against a throwaway HOME: the three states
     # it must tell apart "org shares the default's port/dir" from "isolated",
@@ -1358,12 +1378,62 @@ def drop_legacy_skills_link(skills_link, mode):
         print(f"  removed legacy skills link {skills_link}")
 
 
+def _tilde(path):
+    try:
+        return f"~/{path.relative_to(HOME)}"
+    except ValueError:
+        return str(path)
+
+
+def claude_mem_dir(profile_dir):
+    """~/.claude -> ~/.claude-mem, ~/.claude-<org> -> ~/.claude-mem-<org>."""
+    suffix = profile_dir.name.removeprefix(".claude")
+    return profile_dir.parent / f".claude-mem{suffix}"
+
+
+def sync_claude_md(profile_dir, mode):
+    """Per-tenant CLAUDE.md: a real file that imports the shared base (and the
+    tenant's own claude-mem rules when they exist). Never overwritten once it
+    is a real file that already imports the base, so what claude-mem appends
+    survives; only a missing base import is repaired."""
+    dst = profile_dir / "CLAUDE.md"
+    base_import = f"@{_tilde(profile_dir / CLAUDE_BASE_NAME)}"
+    rules = claude_mem_dir(profile_dir) / "MY-RULES.md"
+    stub = base_import + "\n"
+    if rules.exists():
+        stub += f"@{_tilde(rules)}\n"
+    real = dst.is_file() and not dst.is_symlink()
+    has_base = real and base_import in dst.read_text()
+    if mode == "status":
+        if has_base:
+            print(f"[tenant file]  {dst}")
+        elif dst.is_symlink():
+            print(f"[shared link]  {dst} (leaks across tenants, --push replaces it)")
+        elif real:
+            print(f"[no base]      {dst} (missing {base_import}, --push repairs it)")
+        else:
+            print(f"[missing]      {dst} (--push writes it)")
+        return
+    if mode == "pull" or has_base:
+        return  # generated per machine, never lives in the repo
+    if real:
+        old = dst.read_text()
+        backup_if_real_file(dst)
+        stub += old if old.startswith("\n") else "\n" + old
+    elif dst.is_symlink():
+        dst.unlink()
+    ensure_parent(dst)
+    dst.write_text(stub)
+    print(f"  wrote {dst}")
+
+
 def sync_profile(profile_dir, mode):
     """The per-Claude-profile slice of a sync: shared symlinks plus the
     settings merge, for one ~/.claude[-<org>] directory."""
     print(f"-- profile {profile_dir} --")
     for src, rel in CLAUDE_PROFILE_SYMLINKS:
         sync_symlink(src, profile_dir / rel, mode)
+    sync_claude_md(profile_dir, mode)
     if profile_dir == HOME / ".claude":
         for src, rel in CLAUDE_DEFAULT_ONLY_SYMLINKS:
             sync_symlink(src, profile_dir / rel, mode)
