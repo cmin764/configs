@@ -708,3 +708,7 @@ On a fresh Mac, set `external-agent-import-sync-enabled = false` in `~/.codex/co
 ## Exposed skills and `synced/`
 
 `.claude/user/skills/` holds relative links into the sibling `ai-tools/skills/` (disk-janitor, frontend-review, job-fit-assessor, travel-planner). Only `~/.claude` gets the link; org profiles (created for a `~/Work/<org>` dir) get none and a legacy link to the old skills dir is removed on `--restore`. A restore with `ai-tools` not cloned beside this repo leaves dangling links, which `--status` reports. `synced/` in the same dir is Claude Code's claude.ai account-skill cache: machine-generated, git-ignored, a real directory (so never flagged as dangling), not hand-edited.
+
+## claude-mem tenant policy (15.x)
+
+Each tenant (`~/.claude-mem` and every `~/.claude-mem-<org>`) gets `CLAUDE_MEM_TENANT_POLICY` from `sync.py` on `--push`/`--restore`/`--new-profile`, and `--status` reports drift. Policy: provider `claude`, auth method `subscription` (the default profile's login, or the org's `.env` setup-token), quota fallback provider `off`, credential fallback Off. 15.x defaults the quota fallback to `claude`, which would switch to a different Claude account than the tenant's own. Only these keys are enforced; every other setting stays per tenant. Changes apply when that tenant's worker restarts. Org `.env` holds the credential (never read it, never commit it); `ANTHROPIC_FALLBACK_API_KEY` is deliberately unset everywhere.

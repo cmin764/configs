@@ -239,6 +239,19 @@ def _selftest():
         assert not own_link.is_symlink() and foreign_link.is_symlink()
     assert diff_paths({"a": 1}, {"a": 2}) == ["a: differs"]
 
+    # claude-mem tenant policy: drift detected, fixed, other keys untouched.
+    with tempfile.TemporaryDirectory() as tmp:
+        prof = Path(tmp) / ".claude-org"
+        mem = Path(tmp) / ".claude-mem-org"
+        mem.mkdir()
+        (mem / "settings.json").write_text(json.dumps({"keep": "me"}))
+        assert claude_mem_policy_drift(mem / "settings.json")
+        sync_claude_mem_policy(prof, "push")
+        fixed = json.loads((mem / "settings.json").read_text())
+        assert fixed["keep"] == "me" and not claude_mem_policy_drift(
+            mem / "settings.json"
+        )
+
     # sync_claude_md: a shared symlink becomes a per-tenant file importing the
     # base, and a real file keeps what claude-mem appended.
     with tempfile.TemporaryDirectory() as tmp:
@@ -1021,6 +1034,49 @@ def allocate_claude_mem_ports(used_worker, used_server, bindable=_port_bindable)
     raise SystemExit("no free claude-mem port pair left")
 
 
+# Billing/credential policy every tenant (personal and each org) gets, so a
+# run that hits quota or loses its credential waits instead of silently
+# switching to another Claude account or provider. claude-mem 15.x defaults the
+# quota fallback to "claude", i.e. a different login than the tenant's own.
+# Auth stays "subscription": the tenant's own login (default profile) or its
+# .env setup-token (orgs). Credential fallback ("" = Off) never uses the
+# fallback API key. Ports/data dirs are per tenant and set at --new-profile.
+CLAUDE_MEM_TENANT_POLICY = {
+    "CLAUDE_MEM_PROVIDER": "claude",
+    "CLAUDE_MEM_CLAUDE_AUTH_METHOD": "subscription",
+    "CLAUDE_MEM_QUOTA_FALLBACK_PROVIDER": "off",
+    "CLAUDE_MEM_QUOTA_FALLBACK_AUTH_METHOD": "",
+}
+
+
+def claude_mem_policy_drift(settings_path):
+    """Policy keys whose live value differs from CLAUDE_MEM_TENANT_POLICY."""
+    live = json.loads(settings_path.read_text())
+    return {
+        k: live.get(k) for k, v in CLAUDE_MEM_TENANT_POLICY.items() if live.get(k) != v
+    }
+
+
+def sync_claude_mem_policy(profile_dir, mode):
+    """Enforce the tenant policy on one profile's claude-mem settings.json,
+    leaving every other (accumulated) key alone. Takes effect on worker restart."""
+    path = claude_mem_dir(profile_dir) / "settings.json"
+    if not path.exists():
+        return
+    drift = claude_mem_policy_drift(path)
+    if mode == "status":
+        label = "policy ok" if not drift else "policy drift"
+        print(
+            f"[{label:<13}] {path}"
+            + (f" ({', '.join(drift)}; --push fixes)" if drift else "")
+        )
+    elif mode in ("restore", "push") and drift:
+        live = json.loads(path.read_text())
+        live.update(CLAUDE_MEM_TENANT_POLICY)
+        path.write_text(json.dumps(live, indent=2) + "\n")
+        print(f"  set claude-mem policy in {path} (restart its worker to apply)")
+
+
 def isolated_claude_mem_settings(base, mem_dir, worker_port, server_port):
     """The default profile's claude-mem settings re-pointed at an org's own
     data dir and ports. These six keys are every place claude-mem would
@@ -1036,6 +1092,7 @@ def isolated_claude_mem_settings(base, mem_dir, worker_port, server_port):
             ),
             "CLAUDE_MEM_SERVER_URL": f"http://127.0.0.1:{server_port}",
             "CLAUDE_MEM_SERVER_BETA_URL": f"http://127.0.0.1:{server_port}",
+            **CLAUDE_MEM_TENANT_POLICY,
         }
     )
     return out
@@ -1434,6 +1491,7 @@ def sync_profile(profile_dir, mode):
     for src, rel in CLAUDE_PROFILE_SYMLINKS:
         sync_symlink(src, profile_dir / rel, mode)
     sync_claude_md(profile_dir, mode)
+    sync_claude_mem_policy(profile_dir, mode)
     if profile_dir == HOME / ".claude":
         for src, rel in CLAUDE_DEFAULT_ONLY_SYMLINKS:
             sync_symlink(src, profile_dir / rel, mode)
