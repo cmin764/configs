@@ -5,10 +5,21 @@
 # hook, RTK.md import, or worker process is actually broken.
 set -uo pipefail
 
+input=$(cat)
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 ponytail_script=$(ls -d "$config_dir"/plugins/cache/ponytail/ponytail/*/hooks/ponytail-statusline.sh 2>/dev/null | sort -V | tail -1)
-[ -n "$ponytail_script" ] && bash "$ponytail_script"
+[ -n "$ponytail_script" ] && bash "$ponytail_script" <<<"$input"
+
+# Model family and effort come from the JSON Claude Code feeds the statusline
+# on stdin; the family is parsed out of the ID so a version bump needs no edit.
+model_id=$(jq -r '.model.id // empty' <<<"$input" 2>/dev/null)
+effort=$(jq -r '.effort.level // empty' <<<"$input" 2>/dev/null)
+family=$(sed -E 's/^claude-([a-z]+)-.*/\1/' <<<"$model_id")
+if [ -n "$family" ] && [ "$family" != "$model_id" ]; then
+    family="$(tr '[:lower:]' '[:upper:]' <<<"${family:0:1}")${family:1}"
+    printf ' \033[38;5;75m%s%s\033[0m' "$family" "${effort:+ ($effort)}"
+fi
 
 rtk_ok_count=$(command -v rtk >/dev/null 2>&1 && rtk init --show 2>/dev/null | grep -cE '^\[ok\] (Hook|settings\.json):')
 if ! command -v rtk >/dev/null 2>&1; then
