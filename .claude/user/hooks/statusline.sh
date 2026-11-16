@@ -15,7 +15,7 @@ effort=$(jq -r '.effort.level // empty' <<<"$input" 2>/dev/null)
 family=$(sed -E 's/^claude-([a-z]+)-.*/\1/' <<<"$model_id")
 if [ -n "$family" ] && [ "$family" != "$model_id" ]; then
     family="$(tr '[:lower:]' '[:upper:]' <<<"${family:0:1}")${family:1}"
-    printf '\033[38;5;75m%s%s\033[0m ' "$family" "${effort:+ ($effort)}"
+    printf '\033[38;5;75m%s%s\033[0m \033[38;5;240m·\033[0m ' "$family" "${effort:+ ($effort)}"
 fi
 
 ponytail_script=$(ls -d "$config_dir"/plugins/cache/ponytail/ponytail/*/hooks/ponytail-statusline.sh 2>/dev/null | sort -V | tail -1)
