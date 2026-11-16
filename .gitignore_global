@@ -97,3 +97,5 @@ http-client.private.env.json
 
 # Mac junk
 .DS_Store
+
+**/.claude/settings.local.json
