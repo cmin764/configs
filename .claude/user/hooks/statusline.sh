@@ -5,10 +5,33 @@
 # hook, RTK.md import, or worker process is actually broken.
 set -uo pipefail
 
+input=$(cat)
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
+# Model family, effort and context use come from the JSON Claude Code feeds the
+# statusline on stdin; the family is parsed out of the ID so a version bump
+# needs no edit. Context is green up to ~20% (the sweet spot), then yellow,
+# amber from 50% and red from 80%, so degrading quality shows before it bites.
+model_id=$(jq -r '.model.id // empty' <<<"$input" 2>/dev/null)
+effort=$(jq -r '.effort.level // empty' <<<"$input" 2>/dev/null)
+ctx=$(jq -r '.context_window.used_percentage // empty | floor' <<<"$input" 2>/dev/null)
+family=$(sed -E 's/^claude-([a-z]+)-.*/\1/' <<<"$model_id")
+head_out=""
+if [ -n "$family" ] && [ "$family" != "$model_id" ]; then
+    family="$(tr '[:lower:]' '[:upper:]' <<<"${family:0:1}")${family:1}"
+    head_out=$(printf '\033[38;5;75m%s%s\033[0m' "$family" "${effort:+ ($effort)}")
+fi
+if [ -n "$ctx" ]; then
+    if [ "$ctx" -ge 80 ]; then ctx_color=196
+    elif [ "$ctx" -ge 50 ]; then ctx_color=208
+    elif [ "$ctx" -gt 20 ]; then ctx_color=220
+    else ctx_color=108; fi
+    head_out+=$(printf '%s\033[38;5;%sm%s%%\033[0m' "${head_out:+ }" "$ctx_color" "$ctx")
+fi
+[ -n "$head_out" ] && printf '%s \033[38;5;240m·\033[0m ' "$head_out"
+
 ponytail_script=$(ls -d "$config_dir"/plugins/cache/ponytail/ponytail/*/hooks/ponytail-statusline.sh 2>/dev/null | sort -V | tail -1)
-[ -n "$ponytail_script" ] && bash "$ponytail_script"
+[ -n "$ponytail_script" ] && bash "$ponytail_script" <<<"$input"
 
 rtk_ok_count=$(command -v rtk >/dev/null 2>&1 && rtk init --show 2>/dev/null | grep -cE '^\[ok\] (Hook|settings\.json):')
 if ! command -v rtk >/dev/null 2>&1; then
