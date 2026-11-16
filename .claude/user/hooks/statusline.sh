@@ -53,3 +53,13 @@ elif [ -z "$mem_port" ] || ! curl -s -m 1 "http://localhost:$mem_port/health" 2>
 else
     printf ' \033[38;5;108m[MEM]\033[0m'
 fi
+
+# Where the session is now, and where it started when it has wandered off
+# (a cd, a worktree), so a stray edit location shows before it bites.
+cur_dir=$(jq -r '.workspace.current_dir // .cwd // empty' <<<"$input" 2>/dev/null)
+start_dir=$(jq -r '.workspace.project_dir // empty' <<<"$input" 2>/dev/null)
+if [ -n "$cur_dir" ]; then
+    dir_out="${cur_dir/#$HOME/\~}"
+    [ -n "$start_dir" ] && [ "$start_dir" != "$cur_dir" ] && dir_out+=" (from ${start_dir/#$HOME/\~})"
+    printf ' \033[38;5;240m·\033[0m \033[38;5;245m%s\033[0m' "$dir_out"
+fi
