@@ -329,6 +329,12 @@ def _selftest():
             check_model_overrides(home)
         assert "LEAK" not in out.getvalue(), out.getvalue()
 
+    # latest_model_ids: newest per family, dated IDs ignored.
+    ids = latest_model_ids(
+        b"claude-opus-4-8 claude-opus-5-5 claude-opus-4-20250514 claude-fable-5-1 claude-fable-5-2"
+    )
+    assert ids == {"claude-opus-5-5", "claude-fable-5-2"}, ids
+
     # --new-profile's pure parts: port blocks skip whatever any profile uses,
     # and the isolated settings touch exactly the six colliding keys.
     d, off = CLAUDE_MEM_DEFAULT_WORKER_PORT, CLAUDE_MEM_SERVER_PORT_OFFSET
@@ -1427,6 +1433,49 @@ def check_model_overrides(home=HOME):
         print("[isolated]     no model/effort override in any profile or shell rc")
 
 
+MODEL_ID_RE = re.compile(rb"claude-(fable|opus|sonnet|haiku)-(\d+)-(\d{1,2})(?![\d-])")
+
+
+def latest_model_ids(blob):
+    """Newest canonical model ID per family found in a claude binary.
+
+    Date-suffixed IDs (claude-opus-4-20250514) are skipped by the 2-digit
+    minor cap, so only real version numbers compete.
+    """
+    best = {}
+    for fam, major, minor in MODEL_ID_RE.findall(blob):
+        ver = (int(major), int(minor))
+        if ver > best.get(fam, (0, 0)):
+            best[fam] = ver
+    return {f"claude-{f.decode()}-{v[0]}-{v[1]}" for f, v in best.items()}
+
+
+def check_model_effort_coverage(home=HOME):
+    """Warn when a live profile's modelSettings lacks an entry for the newest
+    model of any family the installed claude knows. modelSettings matches exact
+    IDs only, so a new version silently falls back to the global effort."""
+    exe = shutil.which("claude")
+    if not exe:
+        print("[skip]         model effort coverage (claude not on PATH)")
+        return
+    # shortcut: whole-file read, ~200MB; switch to mmap if the binary outgrows RAM.
+    latest = latest_model_ids(Path(exe).resolve().read_bytes())
+    bad = False
+    for d in sorted(home.glob(".claude*")):
+        path = d / "settings.json"
+        try:
+            have = set(json.loads(path.read_text()).get("modelSettings") or {})
+        except (OSError, ValueError):
+            continue
+        if not have:  # not a Claude profile (claude-mem dirs and the like)
+            continue
+        if missing := sorted(latest - have):
+            bad = True
+            print(f"[effort gap]   {path}: no modelSettings for {', '.join(missing)}")
+    if not bad:
+        print("[effort ok]    every newest model has a modelSettings entry")
+
+
 def check_exposed_skills():
     """Warn on exposed-skill links whose ai-tools target is missing (ai-tools not
     cloned as a sibling of this repo)."""
@@ -1555,6 +1604,7 @@ def run(mode):
     if mode == "status":
         check_claude_mem_isolation()
         check_model_overrides()
+        check_model_effort_coverage()
 
 
 def main():
